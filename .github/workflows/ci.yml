@@ -1,0 +1,53 @@
+name: CI
+
+# Roda as mesmas verificações do comando local `pnpm check`, sem etapas que só existam aqui.
+# Usa `pull_request` (e não `pull_request_target`): PRs vindos de forks rodam sem segredos
+# e com token somente leitura.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Permissões mínimas para todos os jobs. Nenhum job precisa de escrita nem de segredos.
+permissions:
+  contents: read
+
+# Um novo envio na mesma branch ou PR cancela a execução anterior.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    # Este nome é o check que a proteção da branch `main` deve exigir.
+    name: Verificações (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Instalar o pnpm (versão do campo packageManager)
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Instalar o Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Instalar o Rust estável com rustfmt e clippy
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy --no-self-update
+
+      - name: Cache das dependências do Rust
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+
+      - name: Instalar as dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Rodar todas as verificações
+        run: pnpm check
