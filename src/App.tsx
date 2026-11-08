@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import InstalarOllama from "./InstalarOllama";
 
 const MENSAGEM_DADOS =
   "Não foi possível verificar os dados do Memoteca. Feche o aplicativo e abra-o de novo.";
@@ -39,23 +40,20 @@ function App() {
   }, []);
 
   // Detecta o Ollama, reutiliza o que já roda ou inicia o instalado.
-  useEffect(() => {
-    let ativo = true;
+  const prepararOllama = useCallback(() => {
     invoke<EstadoOllama>("preparar_ollama")
       .then((estado) => {
-        if (ativo) {
-          setOllama(estado);
-        }
+        setErroDoOllama(null);
+        setOllama(estado);
       })
       .catch((erro: unknown) => {
-        if (ativo) {
-          setErroDoOllama(mensagemDoErro(erro, MENSAGEM_OLLAMA));
-        }
+        setErroDoOllama(mensagemDoErro(erro, MENSAGEM_OLLAMA));
       });
-    return () => {
-      ativo = false;
-    };
   }, []);
+
+  useEffect(() => {
+    prepararOllama();
+  }, [prepararOllama]);
 
   const problemaComOllama =
     erroDoOllama ??
@@ -75,6 +73,9 @@ function App() {
         <p role="alert" className="erro">
           {problemaComOllama}
         </p>
+      )}
+      {ollama?.estado === "nao_instalado" && (
+        <InstalarOllama aoConcluir={prepararOllama} />
       )}
       {ollama?.estado === "em_execucao" && (
         <>
