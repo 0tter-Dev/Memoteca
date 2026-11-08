@@ -6,7 +6,26 @@ Aplicativo desktop para Windows que organiza e dá memória às suas conversas c
 
 ## Quick Start
 
-Ainda não há código executável neste repositório. Os pré-requisitos de desenvolvimento e os comandos de execução serão documentados aqui na etapa E01 do [plano](PLANO.md).
+O app ainda é só um esqueleto (janela única com o nome do projeto). Para desenvolver no Windows, instale:
+
+- [Node.js](https://nodejs.org) e [pnpm](https://pnpm.io) (a versão usada está em `packageManager` no `package.json`);
+- [Rust](https://rustup.rs) estável, com as [ferramentas de build C++ do Visual Studio](https://tauri.app/start/prerequisites/#windows);
+- WebView2, que já vem no Windows 11.
+
+```bash
+pnpm install
+pnpm tauri dev
+```
+
+Comandos úteis:
+
+| Comando | O que faz |
+| --- | --- |
+| `pnpm check` | Roda todas as verificações: formato, lint, tipos e testes do frontend e do backend Rust |
+| `pnpm test` | Testes do frontend (Vitest) |
+| `pnpm rust:test` | Testes do backend (`cargo test`) |
+| `pnpm format` | Aplica o Prettier |
+| `pnpm tauri build --no-bundle` | Gera o executável em `src-tauri/target/release/memoteca.exe`, sem instalador |
 
 ## Escopo atual
 
@@ -24,12 +43,12 @@ Fora do escopo por enquanto: resumo acumulado do projeto, sincronização entre 
 
 ## Status
 
-Planejamento concluído; o código ainda não foi iniciado. O próximo passo é a etapa **E01** (scaffold do app), que depende de o mantenedor criar o repositório git local e o remoto no GitHub. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
+Etapa **E01** (scaffold do app e ferramentas de qualidade) concluída e em revisão. As verificações automáticas no GitHub chegam na **E02**. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
 
 ## Stack
 
 - **Shell desktop:** Tauri 2, com backend em Rust (a UI roda no WebView2; é um app instalado, não um site).
-- **Frontend:** React + TypeScript.
+- **Frontend:** React + TypeScript, com Vite, pnpm, Vitest, ESLint e Prettier.
 - **Persistência:** SQLite local.
 - **Inferência:** Ollama, via API HTTP local (`localhost:11434`).
 - **CI:** GitHub Actions.
@@ -39,7 +58,7 @@ Decisões ainda abertas estão no Registro de decisões do [`PLANO.md`](PLANO.md
 
 ## Licença
 
-MIT. O arquivo `LICENSE` será adicionado na etapa E01. O repositório é público no GitHub.
+MIT, conforme o arquivo [`LICENSE`](LICENSE). O repositório é público no GitHub.
 
 ## Documentação
 
