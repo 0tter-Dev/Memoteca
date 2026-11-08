@@ -27,6 +27,8 @@ pub enum ErroOllama {
     RespostaInvalida(String),
     /// O Ollama devolveu um erro (HTTP 4xx/5xx ou linha `error` no stream).
     ErroDoOllama(String),
+    /// Não foi possível iniciar o `ollama serve`, ou ele terminou logo depois de iniciar.
+    FalhaAoIniciar(String),
 }
 
 impl ErroOllama {
@@ -61,6 +63,11 @@ impl ErroOllama {
             Self::ErroDoOllama(_) => {
                 "Não foi possível concluir a operação no Ollama. Tente de novo.".to_owned()
             }
+            Self::FalhaAoIniciar(_) => {
+                "Não foi possível iniciar o Ollama. Tente abri-lo pelo menu Iniciar e depois \
+                 abra o Memoteca de novo."
+                    .to_owned()
+            }
         }
     }
 }
@@ -79,6 +86,7 @@ impl fmt::Display for ErroOllama {
             Self::ConexaoInterrompida => write!(f, "conexão interrompida"),
             Self::RespostaInvalida(detalhe) => write!(f, "resposta inválida: {detalhe}"),
             Self::ErroDoOllama(detalhe) => write!(f, "erro do Ollama: {detalhe}"),
+            Self::FalhaAoIniciar(detalhe) => write!(f, "falha ao iniciar o Ollama: {detalhe}"),
         }
     }
 }

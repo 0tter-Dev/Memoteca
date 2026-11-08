@@ -19,8 +19,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E02 | Verificações automáticas no GitHub (CI) | E01 | concluída |
 | E03 | Contrato com a API do Ollama, telas e fluxos | E01 | concluída |
 | E04 | Persistência SQLite e modelo de dados | E01 | concluída |
-| E05 | Cliente da API do Ollama (HTTP e streaming) | E03 | em revisão |
-| E06 | Ciclo de vida do Ollama | E05 | pendente |
+| E05 | Cliente da API do Ollama (HTTP e streaming) | E03 | concluída |
+| E06 | Ciclo de vida do Ollama | E05 | em revisão |
 | E07 | Instalação silenciosa do Ollama | E06 | pendente |
 | E08 | Onboarding e catálogo de modelos | E07 | pendente |
 | E09 | Projetos | E03, E04 | pendente |
@@ -314,7 +314,15 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - Versão abaixo da mínima mostra aviso amigável e não bloqueia o uso de forma irrecuperável.
 - Sem Ollama instalado, o estado "não instalado" encaminha para o onboarding.
 
-**Decisões a tomar:** versão mínima exata (provavelmente ligada ao suporte ao campo `thinking`, a confirmar) e mecanismo de encerramento garantido (um Job Object do Windows é a sugestão).
+**Decisões a tomar:** versão mínima exata (provavelmente ligada ao suporte ao campo `thinking`, a confirmar) e mecanismo de encerramento garantido (um Job Object do Windows é a sugestão). _Decididas: a versão mínima é a 0.30.0 (E03) e o encerramento garantido é por Job Object, ver o Registro de decisões._
+
+**Como ficou (E06):**
+
+- **Código:** em `src-tauri/src/ollama/`, `instalacao` (detecção por `PATH` e pelo local padrão), `processo` (`IniciadorDeProcesso` e `ProcessoFilho`, com a versão real e a falsa dos testes), `job` (o Job Object, único módulo com `unsafe`) e `ciclo` (`GerenciadorOllama`, `EstadoOllama` e `Origem`).
+- **Fluxo de `preparar`:** consulta `/api/version`. Se responde um Ollama, reutiliza (`Origem::Externo`) e conta os modelos. Se responde outro programa, devolve `PortaOcupada` sem iniciar nada. Se ninguém responde, procura a instalação: sem ela, `NaoInstalado`; com ela, inicia `ollama serve`, espera responder (30 s) e passa a ser dono (`Origem::IniciadoPeloApp`). Falhas viram `Indisponivel` com `ErroOllama` tipado (`FalhaAoIniciar`, `TempoEsgotado`).
+- **Encerramento:** só o processo que o app iniciou é encerrado, ao fechar o app e também ao descartar o gerenciador. Cada processo iniciado entra num Job Object que o Windows fecha se o app morrer, e isso encerra também os filhos (o executor do modelo).
+- **Interface:** na abertura, a tela chama o comando `preparar_ollama` e mostra a versão, o aviso de versão antiga, a falta de modelos ou a mensagem amigável do problema. A tela de onboarding que o estado "não instalado" deve abrir é da E08, por ora só aparece a mensagem.
+- **Verificado no executável real** com o Ollama 0.32.9 instalado na máquina: o app inicia o Ollama parado; fechar o app (normal ou à força) encerra o processo; um Ollama externo é reutilizado e continua rodando depois de fechar o app; com outro programa na `11434` nada é iniciado e a mensagem aparece.
 
 ### E07 — Instalação silenciosa do Ollama
 
@@ -555,6 +563,7 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Bibliotecas de UI | Tailwind CSS 4 (estilo), Radix UI (componentes acessíveis), Zustand (estado de UI), `react-markdown` com `remark-gfm` (markdown, sem HTML cru) e `rehype-highlight` (realce de código). Entram como dependências só no PR que as usar pela primeira vez (E09 em diante). Dados de domínio ficam no backend Rust, e não em uma biblioteca de cache no frontend | 2026-11-08 |
 | Ferramenta de E2E | Playwright conectado ao WebView2 por CDP. A E15 começa com um teste-piloto, e a alternativa, se falhar, é o `tauri-driver` | 2026-11-08 |
 | Decisões de design do contrato Ollama (E03) | O Ollama só é acessado pelo backend Rust; endereço fixo `127.0.0.1:11434`; `think` não é enviado e o `thinking` do histórico não é reenviado; só `temperature` e `num_ctx` em `options`; sugestões de memória por `/api/chat` com `format` e sem stream. Valem como aprovadas com o merge da E03 | 2026-11-08 |
+| Encerramento garantido do Ollama | Job Object do Windows por processo iniciado, com `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, via `windows-sys` (dependência só do Windows, já presente na árvore do Tauri, com `unsafe` isolado em `job.rs`). Se o app for finalizado à força, o Windows fecha o job e encerra o Ollama e os filhos dele. Se não for possível criar o job, nada é iniciado | 2026-11-08 |
 | Dependências do cliente Ollama (E05) | `reqwest` (sem TLS e sem proxy, só `stream`), `tokio`, `tokio-util` (cancelamento), `futures-util`, `serde` e `serde_json`. Todas já estavam na árvore de dependências do Tauri, e agora são declaradas diretamente. O servidor falso usa só `tokio` (dependência de desenvolvimento), sem `axum` ou `hyper` próprios. Avisado no PR da E05; vale como aprovada com o merge | 2026-11-08 |
 | Cobertura de testes no CI | Não exigida por enquanto, sem ferramenta de cobertura nem dependência nova. O código ainda é mínimo e um percentual não diria nada. Reavaliar na E15, com o código do MVP pronto; se entrar, deve entrar também no `pnpm check` | 2026-11-08 |
 | Significado de "build" no CI | O CI roda só `pnpm check`. O build é o do frontend (`tsc && vite build`, parte do `pnpm check`), e o Rust é compilado por `clippy` e `cargo test`. O executável (`tauri build --no-bundle`, com LTO) não roda no CI por custo, e o build do instalador entra na E16 | 2026-11-08 |
@@ -563,9 +572,8 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 
 | Decisão | Etapa que a resolve |
 | --- | --- |
-| Confirmar a versão mínima do Ollama contra um Ollama real | E06 |
+| Confirmar a versão mínima do Ollama (0.30.0) contra um Ollama real dessa versão. Na E06 só havia a 0.32.9 para testar | E15 (checklist manual) |
 | Comportamento de links nas respostas do modelo (abrir no navegador exige o plugin `opener` e uma permissão nova; por ora o app não abre links) | E10 |
-| Mecanismo de encerramento garantido do Ollama iniciado pelo app | E06 |
 | Origem, parâmetros e validação do instalador do Ollama; elevação de privilégio | E07 |
 | Lista inicial do catálogo de modelos | E08 |
 | Margem de espaço (alerta ou bloqueio) | E08 |
@@ -622,7 +630,7 @@ Não usados no MVP: `/api/generate`, `/api/ps`, `/api/create`, `/api/copy`, `/ap
 
 - Requisição: `{"model": "<nome>"}`. `404` quando o modelo não está instalado.
 - Usados: `capabilities` (lista, por exemplo `completion`, `vision`, `thinking`), o objeto opcional `thinking` (`values` e `default`) e `model_info["<arquitetura>.context_length"]`, que limita o valor máximo de `num_ctx` oferecido na tela.
-- Se `capabilities` não incluir `completion` (modelo só de embeddings), o app não o oferece para conversa. **(a validar na E05: presença exata de `thinking` em `capabilities` e o nome das chaves de `model_info`.)**
+- Se `capabilities` não incluir `completion` (modelo só de embeddings), o app não o oferece para conversa. **Confirmado na E06 com o Ollama 0.32.9:** `capabilities` traz `completion`, `tools` e `thinking` no `gpt-oss:20b`, e `completion` e `insert` no `deepseek-coder-v2`. A janela de contexto vem em `model_info["<arquitetura>.context_length"]`. Existe também `<arquitetura>.rope.scaling.original_context_length`, que não é a janela e não é usada.
 
 #### `POST /api/pull`
 
@@ -631,7 +639,7 @@ Não usados no MVP: `/api/generate`, `/api/ps`, `/api/create`, `/api/copy`, `/ap
 - **Progresso:** soma de `completed` dividida pela soma de `total` de todos os `digest` já vistos. Até aparecer o primeiro `total`, o progresso é indeterminado.
 - **Sucesso** é exclusivamente a linha `success`. Um stream que termina sem ela é download interrompido.
 - **Cancelar** é fechar a conexão. A documentação diz que um download cancelado é retomado do ponto onde parou na próxima chamada, o que alimenta a decisão "limpar ou retomar" da E08.
-- Modelo inexistente: erro HTTP ou linha `{"error": ...}`, tratado como `ModeloNaoEncontrado`. **(a validar na E08: qual dos dois o Ollama usa.)**
+- Modelo inexistente: **confirmado na E06 (Ollama 0.32.9)** que o `/api/pull` responde `HTTP 200` e, no stream, `{"status":"pulling manifest"}` seguido de `{"error":"pull model manifest: file does not exist"}`. Por isso a E08 deve tratar essa linha `error` (hoje o cliente a devolve como `ErroDoOllama`) para mostrar a mensagem de modelo inexistente. Já `/api/show` e `/api/chat` com modelo inexistente respondem `HTTP 404` e `{"error":"model 'x' not found"}`.
 
 #### `POST /api/chat`
 
@@ -697,7 +705,7 @@ Limites de tempo iniciais, ajustáveis (`Limites` no cliente): conexão 3 s (no 
 
 #### Ciclo de vida do processo (operações locais)
 
-- **Instalação existente:** procurar `ollama.exe` em `%LOCALAPPDATA%\Programs\Ollama` (local padrão da instalação por usuário) e no `PATH`. **(a validar na E06.)**
+- **Instalação existente:** procurar `ollama.exe` nas pastas do `PATH` e, depois, em `%LOCALAPPDATA%ProgramsOllama` (local padrão da instalação por usuário). **Confirmado na E06:** na máquina de desenvolvimento o Ollama está instalado em outro disco, e só o `PATH` o encontra. O instalador também registra o `InstallLocation` no registro de desinstalação do usuário, que a E07 pode usar se for preciso.
 - **Porta e reuso:** o app testa `GET /api/version`. Se é Ollama, reutiliza e **nunca o encerra**. Se outro programa responde, `PortaOcupada`. Se ninguém responde e há instalação, o app inicia `ollama serve` e passa a ser dono desse processo.
 - **O Ollama oficial roda em segundo plano** depois de instalado (ícone de bandeja) e pode iniciar com o Windows. Encontrá-lo já rodando é o caso comum, e ele conta como externo. Um Ollama que o instalador deixe em execução ao terminar também conta como externo. **(a validar na E07.)**
 - **Instalador oficial:** segundo a documentação do Ollama, não exige administrador e instala no diretório do usuário, com pelo menos 4 GB livres para os binários, fora o espaço dos modelos. Parâmetros do modo silencioso, validação e elevação ficam para a E07.

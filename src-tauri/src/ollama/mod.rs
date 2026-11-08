@@ -5,8 +5,13 @@
 //! Toda falha vira um `ErroOllama` tipado, e o texto que já tinha chegado de uma conversa
 //! é preservado em `FalhaChat`.
 
+pub mod ciclo;
 pub mod erro;
+pub mod instalacao;
+#[cfg(windows)]
+mod job;
 mod ndjson;
+pub mod processo;
 pub mod tipos;
 pub mod versao;
 

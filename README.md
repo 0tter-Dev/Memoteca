@@ -43,11 +43,13 @@ Fora do escopo por enquanto: resumo acumulado do projeto, sincronização entre 
 
 ## Status
 
-Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
+Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
 
 O app abre o banco local ao iniciar, aplica as migrações e mostra uma mensagem amigável se não conseguir.
 
-Etapa **E05** (cliente da API do Ollama) em revisão: o backend já sabe consultar a versão, listar modelos, baixar modelos e conversar com streaming, com erros tipados, mas ainda não há telas que usem isso. Os testes rodam contra um servidor Ollama falso, e nunca contra um Ollama real. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
+O backend sabe consultar a versão, listar modelos, baixar modelos e conversar com streaming, com erros tipados. Os testes rodam contra um servidor Ollama falso.
+
+Etapa **E06** (ciclo de vida do Ollama) em revisão: ao abrir, o app detecta o Ollama, reutiliza o que já está rodando (e nunca o encerra) ou inicia o instalado, e mostra a versão ou uma mensagem amigável. O Ollama que o próprio app iniciou é encerrado ao fechar, inclusive se o app for finalizado à força. Ainda não há instalação guiada nem telas de conversa. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
 
 ## Stack
 

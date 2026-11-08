@@ -104,9 +104,15 @@ pub struct OllamaFalso {
 impl OllamaFalso {
     /// Sobe o servidor numa porta livre de `127.0.0.1`.
     pub async fn iniciar() -> Self {
-        let ouvinte = TcpListener::bind("127.0.0.1:0")
+        Self::iniciar_em("127.0.0.1:0").await
+    }
+
+    /// Sobe o servidor num endereço específico (por exemplo, o de um teste que simula o
+    /// Ollama "subindo" depois de ser iniciado).
+    pub async fn iniciar_em(endereco: &str) -> Self {
+        let ouvinte = TcpListener::bind(endereco)
             .await
-            .expect("abrir uma porta local");
+            .expect("abrir a porta local pedida");
         let endereco = ouvinte.local_addr().unwrap();
         let estado = Arc::new(Estado {
             rotas: Mutex::new(HashMap::new()),
@@ -170,10 +176,15 @@ impl Drop for OllamaFalso {
 
 /// Endereço local onde ninguém está ouvindo: conexão recusada.
 pub async fn endereco_sem_ninguem() -> String {
+    format!("http://{}", porta_livre().await)
+}
+
+/// Endereço `ip:porta` de uma porta local que acabou de ser liberada.
+pub async fn porta_livre() -> SocketAddr {
     let ouvinte = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endereco = ouvinte.local_addr().unwrap();
     drop(ouvinte);
-    format!("http://{endereco}")
+    endereco
 }
 
 // ----- Atendimento -----
