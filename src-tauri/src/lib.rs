@@ -1,4 +1,5 @@
 pub mod banco;
+pub mod ollama;
 
 use std::sync::Mutex;
 
