@@ -39,7 +39,7 @@ pub struct ValidadorPowerShell;
 /// Tempo máximo para o Windows verificar. O arquivo inteiro é lido para calcular o hash.
 const PRAZO_DA_VERIFICACAO: Duration = Duration::from_secs(300);
 
-const SCRIPT: &str = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; \
+const SCRIPT: &str = "try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }; \
     $s = Get-AuthenticodeSignature -LiteralPath $env:MEMOTECA_ARQUIVO; \
     $assunto = ''; if ($s.SignerCertificate) { $assunto = $s.SignerCertificate.Subject }; \
     [pscustomobject]@{ Status = $s.Status.ToString(); Subject = $assunto } | ConvertTo-Json -Compress";
@@ -54,13 +54,32 @@ struct SaidaDoPowerShell {
 
 impl ValidadorDeAssinatura for ValidadorPowerShell {
     fn validar(&self, arquivo: &Path, publicador: &str) -> Result<(), FalhaDeAssinatura> {
-        let saida = executar_powershell(arquivo)
+        let (saida, erros) = executar_powershell(arquivo)
             .map_err(|erro| FalhaDeAssinatura::NaoFoiPossivelVerificar(erro.to_string()))?;
-        interpretar(&saida, publicador)
+        interpretar(&saida, publicador).map_err(|falha| match falha {
+            // Sem saída útil, o que o PowerShell escreveu em stderr explica o motivo.
+            FalhaDeAssinatura::NaoFoiPossivelVerificar(detalhe) => {
+                let erros: String = erros.trim().chars().take(400).collect();
+                FalhaDeAssinatura::NaoFoiPossivelVerificar(format!("{detalhe}; stderr: {erros}"))
+            }
+            outra => outra,
+        })
     }
 }
 
-fn executar_powershell(arquivo: &Path) -> io::Result<String> {
+/// Lê um fluxo inteiro numa thread, para o prazo da verificação valer mesmo se travar.
+fn ler_em_thread<R: io::Read + Send + 'static>(
+    mut fluxo: R,
+) -> std::thread::JoinHandle<io::Result<String>> {
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        fluxo.read_to_end(&mut bytes)?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    })
+}
+
+/// Devolve a saída padrão e a de erros do PowerShell.
+fn executar_powershell(arquivo: &Path) -> io::Result<(String, String)> {
     // Caminho completo do sistema, para não depender do `PATH`.
     let raiz = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
     let powershell = Path::new(&raiz)
@@ -82,7 +101,7 @@ fn executar_powershell(arquivo: &Path) -> io::Result<String> {
         .env("MEMOTECA_ARQUIVO", arquivo)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -91,13 +110,8 @@ fn executar_powershell(arquivo: &Path) -> io::Result<String> {
     }
 
     let mut filho = comando.spawn()?;
-    let mut saida = filho.stdout.take().expect("stdout foi pedido como pipe");
-
-    // Lê a saída numa thread, para o prazo valer mesmo se o PowerShell travar.
-    let leitor = std::thread::spawn(move || {
-        let mut texto = String::new();
-        io::Read::read_to_string(&mut saida, &mut texto).map(|_| texto)
-    });
+    let leitor = ler_em_thread(filho.stdout.take().expect("stdout foi pedido como pipe"));
+    let leitor_de_erros = ler_em_thread(filho.stderr.take().expect("stderr foi pedido como pipe"));
 
     let limite = Instant::now() + PRAZO_DA_VERIFICACAO;
     loop {
@@ -111,9 +125,10 @@ fn executar_powershell(arquivo: &Path) -> io::Result<String> {
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    leitor
-        .join()
-        .map_err(|_| io::Error::other("a leitura da saída falhou"))?
+    let falha_na_leitura = || io::Error::other("a leitura da saída falhou");
+    let saida = leitor.join().map_err(|_| falha_na_leitura())??;
+    let erros = leitor_de_erros.join().map_err(|_| falha_na_leitura())??;
+    Ok((saida, erros))
 }
 
 fn interpretar(saida: &str, publicador: &str) -> Result<(), FalhaDeAssinatura> {
