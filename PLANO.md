@@ -18,8 +18,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E01 | Scaffold do app e ferramentas de qualidade | repositório git criado pelo mantenedor | concluída |
 | E02 | Verificações automáticas no GitHub (CI) | E01 | concluída |
 | E03 | Contrato com a API do Ollama, telas e fluxos | E01 | concluída |
-| E04 | Persistência SQLite e modelo de dados | E01 | em revisão |
-| E05 | Cliente da API do Ollama (HTTP e streaming) | E03 | pendente |
+| E04 | Persistência SQLite e modelo de dados | E01 | concluída |
+| E05 | Cliente da API do Ollama (HTTP e streaming) | E03 | em revisão |
 | E06 | Ciclo de vida do Ollama | E05 | pendente |
 | E07 | Instalação silenciosa do Ollama | E06 | pendente |
 | E08 | Onboarding e catálogo de modelos | E07 | pendente |
@@ -280,6 +280,13 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - Resposta com JSON inválido produz erro tipado, e o conteúdo parcial já recebido é preservado. **(falha)**
 - Todos os testes rodam contra o servidor falso, sem Ollama real.
 
+**Como ficou (E05):**
+
+- **Código:** módulo `ollama` em `src-tauri/src/ollama/`. `ClienteOllama` tem `verificar` (`/api/version`), `listar_modelos` (`/api/tags`), `detalhes_do_modelo` (`/api/show`), `baixar_modelo` (`/api/pull`, com progresso) e `conversar` (`/api/chat`, com streaming). Os módulos de apoio são `erro` (`ErroOllama`, `FalhaChat`), `versao` (mínima `0.30.0`), `ndjson` (divisor de linhas em bytes) e `tipos`.
+- **Conversa:** o raciocínio (`thinking`) e o conteúdo chegam separados e na ordem. `think` nunca é enviado, e o corpo leva só `temperature` e `num_ctx` em `options` e `keep_alive`. Qualquer falha devolve `FalhaChat`, com o texto parcial já recebido preservado. Cancelar devolve `Ok` com `MotivoFim::Cancelada` e fecha a conexão, e nenhum pedaço é entregue depois disso.
+- **Servidor falso:** `src-tauri/tests/support/ollama_falso.rs`, em `tokio` puro (HTTP/1.1 escrito à mão, sem biblioteca de servidor), com injeção de falhas: linha partida, JSON inválido, queda no meio, silêncio, resposta que não é HTTP, conexão aceita e fechada. Ele detecta quando o cliente fecha a conexão. A E15 reaproveita o mesmo arquivo.
+- **Achado no Windows:** a recusa de conexão a uma porta fechada leva cerca de 2 s, mesmo em `127.0.0.1`. Por isso o limite de conexão padrão é 3 s, e o estado "Ollama fora do ar" demora esse tempo para ser detectado (relevante para a E06).
+- **Ainda sem comandos do Tauri:** o módulo é só do backend. Os comandos e canais que o ligam à interface entram junto das telas (E06, E08 e E10).
 ### E06 — Ciclo de vida do Ollama
 
 **Depende de:** E05.
@@ -548,6 +555,7 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Bibliotecas de UI | Tailwind CSS 4 (estilo), Radix UI (componentes acessíveis), Zustand (estado de UI), `react-markdown` com `remark-gfm` (markdown, sem HTML cru) e `rehype-highlight` (realce de código). Entram como dependências só no PR que as usar pela primeira vez (E09 em diante). Dados de domínio ficam no backend Rust, e não em uma biblioteca de cache no frontend | 2026-11-08 |
 | Ferramenta de E2E | Playwright conectado ao WebView2 por CDP. A E15 começa com um teste-piloto, e a alternativa, se falhar, é o `tauri-driver` | 2026-11-08 |
 | Decisões de design do contrato Ollama (E03) | O Ollama só é acessado pelo backend Rust; endereço fixo `127.0.0.1:11434`; `think` não é enviado e o `thinking` do histórico não é reenviado; só `temperature` e `num_ctx` em `options`; sugestões de memória por `/api/chat` com `format` e sem stream. Valem como aprovadas com o merge da E03 | 2026-11-08 |
+| Dependências do cliente Ollama (E05) | `reqwest` (sem TLS e sem proxy, só `stream`), `tokio`, `tokio-util` (cancelamento), `futures-util`, `serde` e `serde_json`. Todas já estavam na árvore de dependências do Tauri, e agora são declaradas diretamente. O servidor falso usa só `tokio` (dependência de desenvolvimento), sem `axum` ou `hyper` próprios. Avisado no PR da E05; vale como aprovada com o merge | 2026-11-08 |
 | Cobertura de testes no CI | Não exigida por enquanto, sem ferramenta de cobertura nem dependência nova. O código ainda é mínimo e um percentual não diria nada. Reavaliar na E15, com o código do MVP pronto; se entrar, deve entrar também no `pnpm check` | 2026-11-08 |
 | Significado de "build" no CI | O CI roda só `pnpm check`. O build é o do frontend (`tsc && vite build`, parte do `pnpm check`), e o Rust é compilado por `clippy` e `cargo test`. O executável (`tauri build --no-bundle`, com LTO) não roda no CI por custo, e o build do instalador entra na E16 | 2026-11-08 |
 
@@ -683,9 +691,9 @@ Tipos de erro do cliente (E05). O texto final em pt-BR de cada um fica no catál
 | `ConexaoInterrompida` | Conexão cai no meio do stream | A conexão com o Ollama caiu | Preservar o texto parcial e oferecer tentar de novo |
 | `RespostaInvalida` | JSON inválido ou fora do esquema | Resposta inesperada do Ollama | Preservar o texto parcial |
 | `ErroDoOllama` | `4xx` ou `5xx`, ou linha `error` | Não foi possível concluir. Tente de novo | Texto cru só no log |
-| `Cancelado` | O usuário cancelou | (não é erro para o usuário) | Manter o texto parcial |
+| Cancelamento | O usuário cancelou | (não é erro para o usuário) | Manter o texto parcial. É devolvido como resultado (`MotivoFim::Cancelada` e `ResultadoDownload::Cancelado`), e não como `ErroOllama` |
 
-Limites de tempo iniciais, ajustáveis na E05: conexão 2 s; `/api/version`, `/api/tags` e `/api/show`, 5 s no total; `/api/chat`, sem limite total e 120 s sem nenhum byte; `/api/pull`, 60 s sem nenhum byte.
+Limites de tempo iniciais, ajustáveis (`Limites` no cliente): conexão 3 s (no Windows, conectar a uma porta onde ninguém ouve leva cerca de 2 s até o sistema recusar, e um estouro de tempo durante a conexão também é `OllamaForaDoAr`); `/api/version`, `/api/tags` e `/api/show`, 5 s no total; `/api/chat`, sem limite total e 120 s sem nenhum byte; `/api/pull`, 60 s sem nenhum byte.
 
 #### Ciclo de vida do processo (operações locais)
 

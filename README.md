@@ -43,9 +43,11 @@ Fora do escopo por enquanto: resumo acumulado do projeto, sincronização entre 
 
 ## Status
 
-Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub) e **E03** (contrato com a API do Ollama, telas e fluxos) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
+Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
 
-Etapa **E04** (persistência SQLite e modelo de dados) em revisão: o app abre o banco local ao iniciar, aplica as migrações e mostra uma mensagem amigável se não conseguir. Ainda não há telas que usem os dados. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
+O app abre o banco local ao iniciar, aplica as migrações e mostra uma mensagem amigável se não conseguir.
+
+Etapa **E05** (cliente da API do Ollama) em revisão: o backend já sabe consultar a versão, listar modelos, baixar modelos e conversar com streaming, com erros tipados, mas ainda não há telas que usem isso. Os testes rodam contra um servidor Ollama falso, e nunca contra um Ollama real. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
 
 ## Stack
 
@@ -53,7 +55,7 @@ Etapa **E04** (persistência SQLite e modelo de dados) em revisão: o app abre o
 - **Frontend:** React + TypeScript, com Vite, pnpm, Vitest, ESLint e Prettier.
 - **Interface (decidido, entra nas etapas de tela):** Tailwind CSS 4, Radix UI, Zustand, `react-markdown` com `remark-gfm` e `rehype-highlight`.
 - **Persistência:** SQLite local, via `rusqlite` (SQLite embutido), com migrações próprias e IDs UUIDv7. O banco fica em `%APPDATA%io.github.0tter-dev.memotecamemoteca.db`, com cópias de segurança em `backups` quando uma migração é aplicada.
-- **Inferência:** Ollama 0.30 ou mais recente, via API HTTP local (`localhost:11434`).
+- **Inferência:** Ollama 0.30 ou mais recente, via API HTTP local (`127.0.0.1:11434`), com cliente em Rust (`reqwest`, `tokio`).
 - **Testes ponta a ponta (decidido, entram na E15):** Playwright conectado ao WebView2.
 - **CI:** GitHub Actions (runner Windows, permissões mínimas, actions fixadas por commit).
 - **Idioma:** pt-BR.
