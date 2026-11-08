@@ -99,6 +99,10 @@ fn executar_powershell(arquivo: &Path) -> io::Result<(String, String)> {
         ])
         // O caminho vai por variável de ambiente, nunca montado dentro do script.
         .env("MEMOTECA_ARQUIVO", arquivo)
+        // Quem abre o app a partir do PowerShell 7 (ou um runner do GitHub) herda um
+        // `PSModulePath` com módulos do PowerShell 7, que o Windows PowerShell 5.1 não
+        // consegue carregar. Sem a variável, ele usa os caminhos padrão do sistema.
+        .env_remove("PSModulePath")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
