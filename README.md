@@ -21,7 +21,7 @@ Comandos úteis:
 
 | Comando | O que faz |
 | --- | --- |
-| `pnpm check` | Roda todas as verificações: formato, lint, tipos e testes do frontend e do backend Rust |
+| `pnpm check` | Roda todas as verificações: formato, lint, tipos, testes e build do frontend, e formato, lint e testes do backend Rust. É o mesmo comando que o CI executa |
 | `pnpm test` | Testes do frontend (Vitest) |
 | `pnpm rust:test` | Testes do backend (`cargo test`) |
 | `pnpm format` | Aplica o Prettier |
@@ -43,7 +43,7 @@ Fora do escopo por enquanto: resumo acumulado do projeto, sincronização entre 
 
 ## Status
 
-Etapa **E01** (scaffold do app e ferramentas de qualidade) concluída e em revisão. As verificações automáticas no GitHub chegam na **E02**. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
+Etapa **E01** (scaffold do app e ferramentas de qualidade) concluída. Etapa **E02** (verificações automáticas no GitHub) em revisão: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
 
 ## Stack
 
@@ -51,7 +51,7 @@ Etapa **E01** (scaffold do app e ferramentas de qualidade) concluída e em revis
 - **Frontend:** React + TypeScript, com Vite, pnpm, Vitest, ESLint e Prettier.
 - **Persistência:** SQLite local.
 - **Inferência:** Ollama, via API HTTP local (`localhost:11434`).
-- **CI:** GitHub Actions.
+- **CI:** GitHub Actions (runner Windows, permissões mínimas, actions fixadas por commit).
 - **Idioma:** pt-BR.
 
 Decisões ainda abertas estão no Registro de decisões do [`PLANO.md`](PLANO.md#registro-de-decisões).

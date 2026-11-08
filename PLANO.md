@@ -15,8 +15,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 
 | Etapa | Título | Depende de | Status |
 | --- | --- | --- | --- |
-| E01 | Scaffold do app e ferramentas de qualidade | repositório git criado pelo mantenedor | em revisão |
-| E02 | Verificações automáticas no GitHub (CI) | E01 | pendente |
+| E01 | Scaffold do app e ferramentas de qualidade | repositório git criado pelo mantenedor | concluída |
+| E02 | Verificações automáticas no GitHub (CI) | E01 | em revisão |
 | E03 | Contrato com a API do Ollama, telas e fluxos | E01 | pendente |
 | E04 | Persistência SQLite e modelo de dados | E01 | pendente |
 | E05 | Cliente da API do Ollama (HTTP e streaming) | E03 | pendente |
@@ -194,9 +194,18 @@ O MVP está pronto quando um usuário Windows, **sem Ollama instalado e sem nenh
 - As versões das actions usadas estão fixadas.
 - O workflow executa o mesmo conjunto do comando local da E01, sem verificações que só existam no CI.
 
-**Decisões a tomar:** ferramenta de cobertura e se ela é exigida no CI.
+**Decisões a tomar:** ferramenta de cobertura e se ela é exigida no CI. _Decidido: não exigir por enquanto, ver o Registro de decisões._
 
 **Documentação:** `README.md` (Status e como rodar as verificações).
+
+**Ações manuais do mantenedor no GitHub** (não dá para fazer por arquivo no repositório; faça depois do merge da E02, quando o check já existir):
+
+1. **Proteger a `main`** em Settings → Rules → Rulesets (ou Branches): exigir PR antes do merge, exigir o check **Verificações (Windows)** e que a branch esteja atualizada, bloquear _force push_ e exclusão.
+2. **Restringir quem faz merge:** exigir 1 aprovação e deixar só o seu usuário na lista de quem pode contornar a exigência de PR. Assim a conta do agente, que tem permissão Write para abrir branches, não consegue fazer merge.
+3. **Reduzir o poder dos workflows** em Settings → Actions → General: permissão padrão do `GITHUB_TOKEN` somente leitura, não enviar segredos nem token de escrita a PRs de forks, e exigir aprovação para rodar workflows de quem contribui pela primeira vez.
+4. **Exigir actions fixadas** na mesma tela, em "Allow actions and reusable workflows" (permitir só as selecionadas e exigir fixação por SHA de commit completo).
+
+Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e o teste `todas_as_actions_estao_fixadas_por_commit` garante que nenhuma volte para uma tag.
 
 ### E03 — Contrato com a API do Ollama, telas e fluxos
 
@@ -524,12 +533,13 @@ O MVP está pronto quando um usuário Windows, **sem Ollama instalado e sem nenh
 | Segurança do webview | Content-Security-Policy restritiva desde a E01 (`default-src 'self'`); novas origens só entram com aprovação | 2026-11-08 |
 | Titular da licença MIT | "Memoteca contributors", no `LICENSE` e no `Cargo.toml`. Pode ser trocado por nome próprio a qualquer momento | 2026-11-08 |
 | Relação com o Ollama | Projeto independente, sem afiliação nem relação direta com o Ollama (projeto e marca); aviso explícito na documentação, no app e no instalador | 2026-11-08 |
+| Cobertura de testes no CI | Não exigida por enquanto, sem ferramenta de cobertura nem dependência nova. O código ainda é mínimo e um percentual não diria nada. Reavaliar na E15, com o código do MVP pronto; se entrar, deve entrar também no `pnpm check` | 2026-11-08 |
+| Significado de "build" no CI | O CI roda só `pnpm check`. O build é o do frontend (`tsc && vite build`, parte do `pnpm check`), e o Rust é compilado por `clippy` e `cargo test`. O executável (`tauri build --no-bundle`, com LTO) não roda no CI por custo, e o build do instalador entra na E16 | 2026-11-08 |
 
 ### Pendentes
 
 | Decisão | Etapa que a resolve |
 | --- | --- |
-| Cobertura de testes exigida no CI | E02 |
 | Versão mínima do Ollama | E03 e E06 |
 | Bibliotecas de UI (componentes, estado, markdown, realce de código) | E03 |
 | Ferramenta de E2E para o Tauri | E03 e E15 |
