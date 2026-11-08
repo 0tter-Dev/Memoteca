@@ -1,0 +1,22 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Dependências e artefatos de build
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editores e sistema
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

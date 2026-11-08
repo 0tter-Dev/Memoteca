@@ -15,7 +15,7 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 
 | Etapa | Título | Depende de | Status |
 | --- | --- | --- | --- |
-| E01 | Scaffold do app e ferramentas de qualidade | repositório git criado pelo mantenedor | pendente |
+| E01 | Scaffold do app e ferramentas de qualidade | repositório git criado pelo mantenedor | em revisão |
 | E02 | Verificações automáticas no GitHub (CI) | E01 | pendente |
 | E03 | Contrato com a API do Ollama, telas e fluxos | E01 | pendente |
 | E04 | Persistência SQLite e modelo de dados | E01 | pendente |
@@ -519,13 +519,16 @@ O MVP está pronto quando um usuário Windows, **sem Ollama instalado e sem nenh
 | Nome do projeto | **Memoteca** ("memória" + "-teca"). Escolhido após triagem de conflitos: nenhum produto, empresa ou marca de IA com esse nome foi encontrado, só repositórios de alunos de cursos | 2026-11-08 |
 | Ollama já em execução | Reutilizar a instância; encerrar só o processo iniciado pelo app | 2026-11-08 |
 | Repositório e CI | Git local e remoto criados manualmente pelo mantenedor; checks e workflows no GitHub desenvolvidos nas etapas E02 e E15 | 2026-11-08 |
+| Gerenciador de pacotes e runner de teste do frontend | pnpm e Vitest | 2026-11-08 |
+| Identificador do app (Tauri) | `io.github.0tter-dev.memoteca`. Mudá-lo depois altera a pasta de dados do app no Windows, então só deve mudar antes do primeiro release | 2026-11-08 |
+| Segurança do webview | Content-Security-Policy restritiva desde a E01 (`default-src 'self'`); novas origens só entram com aprovação | 2026-11-08 |
+| Titular da licença MIT | "Memoteca contributors", no `LICENSE` e no `Cargo.toml`. Pode ser trocado por nome próprio a qualquer momento | 2026-11-08 |
 | Relação com o Ollama | Projeto independente, sem afiliação nem relação direta com o Ollama (projeto e marca); aviso explícito na documentação, no app e no instalador | 2026-11-08 |
 
 ### Pendentes
 
 | Decisão | Etapa que a resolve |
 | --- | --- |
-| Gerenciador de pacotes e runner de teste do frontend | E01 |
 | Cobertura de testes exigida no CI | E02 |
 | Versão mínima do Ollama | E03 e E06 |
 | Bibliotecas de UI (componentes, estado, markdown, realce de código) | E03 |
@@ -546,7 +549,7 @@ O MVP está pronto quando um usuário Windows, **sem Ollama instalado e sem nenh
 | Modelo e escopo das sugestões de memória | E12 |
 | Formato do export e política de importação | E13 |
 | Formato do instalador, assinatura de código, dados na desinstalação | E16 |
-| Identidade visual (logo e paleta). Opcional, a discutir quando o usuário quiser, com a skill `project-identity`. Direção inicial: marca geométrica de "prateleiras e um ponto" | Antes de E16 |
+| Identidade visual (logo e paleta). Opcional, a discutir quando o usuário quiser, com a skill `project-identity`. Direção inicial: marca geométrica de "prateleiras e um ponto". Os ícones atuais são os padrões do Tauri e são provisórios | Antes de E16 |
 | Consulta formal de registro de marca (INPI, USPTO, EUIPO) e do domínio, antes de divulgar amplamente. A triagem feita não substitui essa consulta | Mantenedor, antes de divulgar |
 
 ### Contrato Ollama
