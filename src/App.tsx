@@ -8,3 +8,7 @@ function App() {
 }
 
 export default App;
+
+export function falhaDeLint() {
+  debugger;
+}
