@@ -17,8 +17,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | --- | --- | --- | --- |
 | E01 | Scaffold do app e ferramentas de qualidade | repositório git criado pelo mantenedor | concluída |
 | E02 | Verificações automáticas no GitHub (CI) | E01 | concluída |
-| E03 | Contrato com a API do Ollama, telas e fluxos | E01 | em revisão |
-| E04 | Persistência SQLite e modelo de dados | E01 | pendente |
+| E03 | Contrato com a API do Ollama, telas e fluxos | E01 | concluída |
+| E04 | Persistência SQLite e modelo de dados | E01 | em revisão |
 | E05 | Cliente da API do Ollama (HTTP e streaming) | E03 | pendente |
 | E06 | Ciclo de vida do Ollama | E05 | pendente |
 | E07 | Instalação silenciosa do Ollama | E06 | pendente |
@@ -248,7 +248,14 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - Uma memória global não pertence a nenhum projeto, e uma memória de projeto sempre aponta para um projeto existente.
 - Nenhum ID é reaproveitado depois de uma exclusão.
 
-**Decisões a tomar:** biblioteca SQLite (`rusqlite`, `sqlx`…), formato do ID (UUID, ULID…), exclusão física ou lógica (tombstones) pensando no sync futuro, o que acontece com conversas e memórias ao excluir um projeto, e backup do banco antes de migrar.
+**Decisões a tomar:** biblioteca SQLite (`rusqlite`, `sqlx`…), formato do ID (UUID, ULID…), exclusão física ou lógica (tombstones) pensando no sync futuro, o que acontece com conversas e memórias ao excluir um projeto, e backup do banco antes de migrar. _Decididas com o usuário, ver o Registro de decisões._
+
+**Como ficou (E04):**
+
+- **Código:** módulo `banco` em `src-tauri/src/banco/` (`Banco`, migrações em `migracoes/*.sql`, `backup`, `erro`, `id`, `modelos`, `repositorio`). O banco é `memoteca.db` na pasta de dados do app (`%APPDATA%io.github.0tter-dev.memoteca`), e as cópias de segurança ficam em `backups` ao lado dele.
+- **Tabelas:** `configuracoes`, `projetos`, `conversas`, `mensagens`, `memorias` e `exclusoes`. Todas usam `STRICT`. IDs são UUIDv7 em texto e as datas são ISO 8601 em UTC.
+- **Mensagens** guardam só os papéis `user` e `assistant`, com o `thinking` em coluna própria. O system prompt nunca é gravado como mensagem. Modelo e parâmetros da conversa são opcionais, e os valores padrão são definidos na E10.
+- **Interface:** na abertura, o app consulta o comando `estado_do_banco`. Se o banco não abrir, a tela mostra a mensagem amigável.
 
 **Documentação:** `README.md` (Stack) e Registro de decisões.
 
@@ -523,6 +530,10 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Shell desktop | Tauri 2 com backend em Rust, foco em app desktop Windows | 2026-11-08 |
 | Frontend | React + TypeScript | 2026-11-08 |
 | Persistência | SQLite local | 2026-11-08 |
+| Biblioteca SQLite e migrações | `rusqlite` com o SQLite embutido (`bundled`) e um executor de migrações próprio: arquivos `.sql` numerados, versão em `PRAGMA user_version` e todas as migrações pendentes numa única transação (tudo ou nada). Dependências novas: `rusqlite` e `uuid` | 2026-11-08 |
+| Formato dos IDs | UUIDv7 em texto, gerado pelo app (`uuid` com a feature `v7`). Ordenado por data de criação e nunca reaproveitado | 2026-11-08 |
+| Exclusão e cascata | Exclusão **física**, com registro mínimo na tabela `exclusoes` (só ID, tipo e data, sem conteúdo), gravado por gatilhos, inclusive nas exclusões em cascata. Um ID registrado não pode voltar a ser inserido. Excluir um projeto apaga em cascata as conversas, mensagens e memórias dele, e a tela de confirmação (E09) mostra as quantidades. Memórias globais não são tocadas | 2026-11-08 |
+| Backup antes de migrar | Só quando há migração pendente em um banco que já existe: cópia por `VACUUM INTO` na pasta `backups`, mantendo as 3 mais recentes. Banco novo não gera cópia. Só arquivos com o nome `copia-v<versão>-<instante>.db` são apagados na limpeza | 2026-11-08 |
 | Idioma | Interface e documentação em pt-BR; `i18n` en/es só como possibilidade futura | 2026-11-08 |
 | Licença e visibilidade | MIT; repositório público no GitHub | 2026-11-08 |
 | Nome do projeto | **Memoteca** ("memória" + "-teca"). Escolhido após triagem de conflitos: nenhum produto, empresa ou marca de IA com esse nome foi encontrado, só repositórios de alunos de cursos | 2026-11-08 |
@@ -546,11 +557,6 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | --- | --- |
 | Confirmar a versão mínima do Ollama contra um Ollama real | E06 |
 | Comportamento de links nas respostas do modelo (abrir no navegador exige o plugin `opener` e uma permissão nova; por ora o app não abre links) | E10 |
-| Biblioteca SQLite e estratégia de migração | E04 |
-| Formato dos IDs | E04 |
-| Exclusão física ou lógica (tombstones) | E04 |
-| O que acontece com as conversas e memórias ao excluir um projeto | E04 e E09 |
-| Backup do banco antes de migrar | E04 |
 | Mecanismo de encerramento garantido do Ollama iniciado pelo app | E06 |
 | Origem, parâmetros e validação do instalador do Ollama; elevação de privilégio | E07 |
 | Lista inicial do catálogo de modelos | E08 |
