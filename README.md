@@ -43,14 +43,18 @@ Fora do escopo por enquanto: resumo acumulado do projeto, sincronização entre 
 
 ## Status
 
-Etapa **E01** (scaffold do app e ferramentas de qualidade) concluída. Etapa **E02** (verificações automáticas no GitHub) em revisão: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
+Etapas **E01** (scaffold do app e ferramentas de qualidade) e **E02** (verificações automáticas no GitHub) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
+
+Etapa **E03** (contrato com a API do Ollama, telas e fluxos, e plano de testes de robustez) em revisão. É uma etapa de design, só documentação: não há código novo, e o resultado está no [`PLANO.md`](PLANO.md). O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
 
 ## Stack
 
 - **Shell desktop:** Tauri 2, com backend em Rust (a UI roda no WebView2; é um app instalado, não um site).
 - **Frontend:** React + TypeScript, com Vite, pnpm, Vitest, ESLint e Prettier.
+- **Interface (decidido, entra nas etapas de tela):** Tailwind CSS 4, Radix UI, Zustand, `react-markdown` com `remark-gfm` e `rehype-highlight`.
 - **Persistência:** SQLite local.
-- **Inferência:** Ollama, via API HTTP local (`localhost:11434`).
+- **Inferência:** Ollama 0.30 ou mais recente, via API HTTP local (`localhost:11434`).
+- **Testes ponta a ponta (decidido, entram na E15):** Playwright conectado ao WebView2.
 - **CI:** GitHub Actions (runner Windows, permissões mínimas, actions fixadas por commit).
 - **Idioma:** pt-BR.
 
