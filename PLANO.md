@@ -16,8 +16,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | Etapa | Título | Depende de | Status |
 | --- | --- | --- | --- |
 | E01 | Scaffold do app e ferramentas de qualidade | repositório git criado pelo mantenedor | concluída |
-| E02 | Verificações automáticas no GitHub (CI) | E01 | em revisão |
-| E03 | Contrato com a API do Ollama, telas e fluxos | E01 | pendente |
+| E02 | Verificações automáticas no GitHub (CI) | E01 | concluída |
+| E03 | Contrato com a API do Ollama, telas e fluxos | E01 | em revisão |
 | E04 | Persistência SQLite e modelo de dados | E01 | pendente |
 | E05 | Cliente da API do Ollama (HTTP e streaming) | E03 | pendente |
 | E06 | Ciclo de vida do Ollama | E05 | pendente |
@@ -226,7 +226,7 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - Cada cenário de falha da seção 2.11 do conceito (disco cheio, porta ocupada, download interrompido, instalação parcial) tem um teste previsto no plano de robustez. **(falha)**
 - As três seções acima existem neste arquivo e foram aprovadas pelo usuário antes de a E05 e a E09 começarem.
 
-**Decisões a tomar:** versão mínima do Ollama, bibliotecas de UI (componentes, estado, markdown, realce de código) e ferramenta de E2E.
+**Decisões a tomar:** versão mínima do Ollama, bibliotecas de UI (componentes, estado, markdown, realce de código) e ferramenta de E2E. _Decididas com o usuário, ver o Registro de decisões._
 
 ### E04 — Persistência SQLite e modelo de dados
 
@@ -533,6 +533,10 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Segurança do webview | Content-Security-Policy restritiva desde a E01 (`default-src 'self'`); novas origens só entram com aprovação | 2026-11-08 |
 | Titular da licença MIT | "Memoteca contributors", no `LICENSE` e no `Cargo.toml`. Pode ser trocado por nome próprio a qualquer momento | 2026-11-08 |
 | Relação com o Ollama | Projeto independente, sem afiliação nem relação direta com o Ollama (projeto e marca); aviso explícito na documentação, no app e no instalador | 2026-11-08 |
+| Versão mínima do Ollama | **0.30.0**. O usuário pediu uma versão intermediária: recente o bastante para um app novo, sem ser a última para não gerar avisos sem necessidade. A 0.30.0 saiu em 2026-05-13 e a versão atual era a 0.40.15. O campo `thinking` do `/api/chat` entrou na 0.9.0, então o mínimo o cobre com folga. Revisar quando a E06 testar contra um Ollama real | 2026-11-08 |
+| Bibliotecas de UI | Tailwind CSS 4 (estilo), Radix UI (componentes acessíveis), Zustand (estado de UI), `react-markdown` com `remark-gfm` (markdown, sem HTML cru) e `rehype-highlight` (realce de código). Entram como dependências só no PR que as usar pela primeira vez (E09 em diante). Dados de domínio ficam no backend Rust, e não em uma biblioteca de cache no frontend | 2026-11-08 |
+| Ferramenta de E2E | Playwright conectado ao WebView2 por CDP. A E15 começa com um teste-piloto, e a alternativa, se falhar, é o `tauri-driver` | 2026-11-08 |
+| Decisões de design do contrato Ollama (E03) | O Ollama só é acessado pelo backend Rust; endereço fixo `127.0.0.1:11434`; `think` não é enviado e o `thinking` do histórico não é reenviado; só `temperature` e `num_ctx` em `options`; sugestões de memória por `/api/chat` com `format` e sem stream. Valem como aprovadas com o merge da E03 | 2026-11-08 |
 | Cobertura de testes no CI | Não exigida por enquanto, sem ferramenta de cobertura nem dependência nova. O código ainda é mínimo e um percentual não diria nada. Reavaliar na E15, com o código do MVP pronto; se entrar, deve entrar também no `pnpm check` | 2026-11-08 |
 | Significado de "build" no CI | O CI roda só `pnpm check`. O build é o do frontend (`tsc && vite build`, parte do `pnpm check`), e o Rust é compilado por `clippy` e `cargo test`. O executável (`tauri build --no-bundle`, com LTO) não roda no CI por custo, e o build do instalador entra na E16 | 2026-11-08 |
 
@@ -540,9 +544,8 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 
 | Decisão | Etapa que a resolve |
 | --- | --- |
-| Versão mínima do Ollama | E03 e E06 |
-| Bibliotecas de UI (componentes, estado, markdown, realce de código) | E03 |
-| Ferramenta de E2E para o Tauri | E03 e E15 |
+| Confirmar a versão mínima do Ollama contra um Ollama real | E06 |
+| Comportamento de links nas respostas do modelo (abrir no navegador exige o plugin `opener` e uma permissão nova; por ora o app não abre links) | E10 |
 | Biblioteca SQLite e estratégia de migração | E04 |
 | Formato dos IDs | E04 |
 | Exclusão física ou lógica (tombstones) | E04 |
@@ -564,12 +567,369 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 
 ### Contrato Ollama
 
-_A preencher na E03._
+Escrito na E03. Fontes: documentação oficial do repositório do Ollama (`docs/api.md`, `docs/api/errors.mdx`, `docs/api/streaming.mdx`, `docs/capabilities/thinking.mdx`, `docs/faq.mdx` e `docs/windows.mdx`), lida em 2026-11-08, quando a versão mais recente era a 0.40.15. Itens marcados **(a validar)** não estão explícitos nessa documentação e devem ser conferidos contra um Ollama real na etapa indicada, antes de virarem teste.
+
+#### Princípios
+
+1. **Só o backend Rust fala com o Ollama.** A WebView não faz requisições a `11434`: a CSP (`connect-src`) não a permite e continua assim. A UI usa comandos e canais do Tauri.
+2. **Endereço fixo `http://127.0.0.1:11434`.** O IP literal evita falhas de resolução de `localhost`. `OLLAMA_HOST` personalizado não é suportado no MVP.
+3. **Formato.** Corpo JSON. Respostas em stream são NDJSON (um objeto JSON por linha, `application/x-ndjson`), e uma linha pode chegar partida entre dois pedaços de rede. Durações vêm em nanossegundos.
+4. **Tolerância.** Campos desconhecidos são ignorados, e campos opcionais ausentes não são erro.
+5. **Nome de modelo.** Formato `modelo:tag`, com `latest` quando a tag é omitida. O app guarda o nome exatamente como o `/api/tags` o devolve.
+6. **Sem autenticação e só modelos locais.** Modelos em nuvem do Ollama exigem login e ficam fora do MVP. Se o `/api/tags` listar algum, o app não o oferece **(a validar na E05: como identificá-los)**.
+7. **Mensagem de erro do Ollama nunca vai para a tela.** O texto cru (`error`) vai só para o log local; o usuário vê a mensagem amigável do tipo de erro correspondente.
+
+#### Endpoints usados
+
+| Endpoint | Para quê | Fluxos | Cliente |
+| --- | --- | --- | --- |
+| `GET /api/version` | Saber se há um Ollama respondendo, qual a versão e se é Ollama de fato | F1 | E05 |
+| `GET /api/tags` | Listar modelos instalados | F1, F2, F3, F4 | E05 |
+| `POST /api/show` | Capacidades e janela de contexto de um modelo | F4 | E05 |
+| `POST /api/pull` | Baixar um modelo, com progresso | F2 | E05 |
+| `POST /api/chat` | Conversar com streaming e gerar as sugestões de memória | F4, F6 | E05 |
+
+Não usados no MVP: `/api/generate`, `/api/ps`, `/api/create`, `/api/copy`, `/api/delete`, `/api/push`, `/api/embed*` e os endpoints de compatibilidade com OpenAI e Anthropic.
+
+#### `GET /api/version`
+
+- Resposta: `{"version": "0.30.0"}`.
+- **É Ollama** quando responde `200` com JSON que tem o campo `version` em texto. Qualquer outra coisa que responda na porta (HTML, JSON sem `version`, conexão aceita sem HTTP válido) é **outro programa**.
+- Comparação de versão por número (`major.minor.patch`), ignorando sufixos como `-rc1`.
+- **Versão mínima: `0.30.0`** (ver Registro de decisões). Abaixo disso: aviso amigável, sem bloqueio irrecuperável.
+
+#### `GET /api/tags`
+
+- Resposta: `{"models": [{"name", "model", "size", "modified_at", "digest", "details": {"family", "parameter_size", "quantization_level", ...}}]}`.
+- Usados: `name` (identificador exibido e enviado de volta ao Ollama), `size` em bytes, `details.parameter_size` e `details.quantization_level` para descrever o modelo.
+- `models: []` significa Ollama sem nenhum modelo, e leva ao passo de escolha de modelo do onboarding.
+
+#### `POST /api/show`
+
+- Requisição: `{"model": "<nome>"}`. `404` quando o modelo não está instalado.
+- Usados: `capabilities` (lista, por exemplo `completion`, `vision`, `thinking`), o objeto opcional `thinking` (`values` e `default`) e `model_info["<arquitetura>.context_length"]`, que limita o valor máximo de `num_ctx` oferecido na tela.
+- Se `capabilities` não incluir `completion` (modelo só de embeddings), o app não o oferece para conversa. **(a validar na E05: presença exata de `thinking` em `capabilities` e o nome das chaves de `model_info`.)**
+
+#### `POST /api/pull`
+
+- Requisição: `{"model": "<nome>", "stream": true}`.
+- Linhas do stream, na ordem: `{"status": "pulling manifest"}`; várias `{"status": "pulling <digest>", "digest", "total", "completed"}` (`completed` pode faltar antes de o download da camada começar); `verifying sha256 digest`; `writing manifest`; `removing any unused layers`; `{"status": "success"}`.
+- **Progresso:** soma de `completed` dividida pela soma de `total` de todos os `digest` já vistos. Até aparecer o primeiro `total`, o progresso é indeterminado.
+- **Sucesso** é exclusivamente a linha `success`. Um stream que termina sem ela é download interrompido.
+- **Cancelar** é fechar a conexão. A documentação diz que um download cancelado é retomado do ponto onde parou na próxima chamada, o que alimenta a decisão "limpar ou retomar" da E08.
+- Modelo inexistente: erro HTTP ou linha `{"error": ...}`, tratado como `ModeloNaoEncontrado`. **(a validar na E08: qual dos dois o Ollama usa.)**
+
+#### `POST /api/chat`
+
+Requisição:
+
+```json
+{
+  "model": "qwen3:8b",
+  "messages": [
+    { "role": "system", "content": "<system prompt do projeto + memórias>" },
+    { "role": "user", "content": "..." },
+    { "role": "assistant", "content": "..." }
+  ],
+  "stream": true,
+  "options": { "temperature": 0.7, "num_ctx": 8192 },
+  "keep_alive": "5m"
+}
+```
+
+Regras:
+
+- **Uma única mensagem `system`, sempre a primeira.** O conteúdo dela (system prompt do projeto e memórias) é montado a cada envio. A ordem interna é definida na E11.
+- **Histórico:** só `role` e `content`. O `thinking` de respostas anteriores **não é reenviado**.
+- **`think` não é enviado.** O modelo usa o padrão dele, e a UI mostra `thinking` apenas se o modelo o emitir. É isso que dispensa um toggle por conversa.
+- **`options`:** só `temperature` e `num_ctx`.
+- **`keep_alive`:** no nível superior. Opções na tela: `5m` (padrão do Ollama), `30m`, `1h`, `24h`, "manter carregado" (número `-1`) e "descarregar logo" (número `0`).
+- **Cancelar** é fechar a conexão, e o cliente descarta qualquer pedaço que chegar depois. **(a validar na E05: que o Ollama interrompe a geração quando o cliente desconecta.)**
+
+Stream de resposta:
+
+```json
+{"model":"qwen3:8b","created_at":"...","message":{"role":"assistant","thinking":"Vou pensar..."},"done":false}
+{"model":"qwen3:8b","created_at":"...","message":{"role":"assistant","content":"Olá"},"done":false}
+{"model":"qwen3:8b","created_at":"...","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","eval_count":282}
+```
+
+- Cada linha traz `message.content` e/ou `message.thinking`. O raciocínio vem antes da resposta. Os dois são acumulados em separado.
+- O stream acaba na linha com `done: true`. `done_reason: "length"` indica resposta cortada por limite de tamanho, e a UI avisa. **(a validar na E05.)**
+- Sem nenhuma linha com `thinking`, não existe seção de raciocínio, e isso não é erro.
+
+Sugestões de memória (E12): `POST /api/chat` com `"stream": false`, `format` com um JSON Schema da lista de sugestões e a conversa mais a instrução como `messages`. A resposta é lida de `message.content` e validada. Qualquer coisa fora do esquema é erro `RespostaInvalida`. **(a validar na E12: comportamento de `format` e de `think: false` em modelos com e sem raciocínio.)**
+
+#### Erros
+
+Códigos HTTP documentados: `200`, `400` (requisição inválida), `404` (modelo inexistente), `429`, `500` e `502`. Corpo de erro: `{"error": "<texto>"}`. Erro **no meio** de um stream: uma linha `{"error": "<texto>"}`, sem mudar o status HTTP.
+
+Tipos de erro do cliente (E05). O texto final em pt-BR de cada um fica no catálogo da E14.
+
+| Tipo | Quando | O que o usuário vê (resumo) | Recuperação |
+| --- | --- | --- | --- |
+| `OllamaForaDoAr` | Conexão recusada | O Ollama não está em execução | Oferecer iniciar e tentar de novo |
+| `PortaOcupada` | A porta responde, mas não é Ollama | Outro programa está usando a porta do Ollama | Orientar a fechá-lo e tentar de novo; não iniciar nada |
+| `VersaoAntiga` | Versão abaixo da mínima | Atualize o Ollama para usar o Memoteca | Aviso, sem bloquear |
+| `ModeloNaoEncontrado` | `404` ou erro equivalente | O modelo não está instalado | Oferecer baixar |
+| `ModeloSemSuporte` | Sem `completion` | Este modelo não serve para conversa | Escolher outro modelo |
+| `TempoEsgotado` | Nenhum byte dentro do limite de ociosidade | O Ollama demorou demais para responder | Tentar de novo |
+| `ConexaoInterrompida` | Conexão cai no meio do stream | A conexão com o Ollama caiu | Preservar o texto parcial e oferecer tentar de novo |
+| `RespostaInvalida` | JSON inválido ou fora do esquema | Resposta inesperada do Ollama | Preservar o texto parcial |
+| `ErroDoOllama` | `4xx` ou `5xx`, ou linha `error` | Não foi possível concluir. Tente de novo | Texto cru só no log |
+| `Cancelado` | O usuário cancelou | (não é erro para o usuário) | Manter o texto parcial |
+
+Limites de tempo iniciais, ajustáveis na E05: conexão 2 s; `/api/version`, `/api/tags` e `/api/show`, 5 s no total; `/api/chat`, sem limite total e 120 s sem nenhum byte; `/api/pull`, 60 s sem nenhum byte.
+
+#### Ciclo de vida do processo (operações locais)
+
+- **Instalação existente:** procurar `ollama.exe` em `%LOCALAPPDATA%\Programs\Ollama` (local padrão da instalação por usuário) e no `PATH`. **(a validar na E06.)**
+- **Porta e reuso:** o app testa `GET /api/version`. Se é Ollama, reutiliza e **nunca o encerra**. Se outro programa responde, `PortaOcupada`. Se ninguém responde e há instalação, o app inicia `ollama serve` e passa a ser dono desse processo.
+- **O Ollama oficial roda em segundo plano** depois de instalado (ícone de bandeja) e pode iniciar com o Windows. Encontrá-lo já rodando é o caso comum, e ele conta como externo. Um Ollama que o instalador deixe em execução ao terminar também conta como externo. **(a validar na E07.)**
+- **Instalador oficial:** segundo a documentação do Ollama, não exige administrador e instala no diretório do usuário, com pelo menos 4 GB livres para os binários, fora o espaço dos modelos. Parâmetros do modo silencioso, validação e elevação ficam para a E07.
+
+#### Estados de inicialização
+
+| Estado | Detecção | Ação |
+| --- | --- | --- |
+| Pronto | `/api/version` é Ollama, versão ≥ mínima, há modelos | Abrir o app principal |
+| Sem modelos | Ollama pronto, `/api/tags` vazio | Onboarding, passo de modelo |
+| Versão antiga | Ollama pronto, versão < mínima | Aviso amigável, uso permitido |
+| Instalado, parado | Nada na porta, `ollama.exe` encontrado | Iniciar `ollama serve` e voltar a verificar |
+| Não instalado | Nada na porta, `ollama.exe` não encontrado | Onboarding, passo de instalação |
+| Porta ocupada | Algo responde na porta e não é Ollama | Erro `PortaOcupada`, nada é iniciado |
 
 ### Telas e fluxos
 
-_A preencher na E03._
+Escrito na E03. Toda a interface em pt-BR. Cada ação aponta para um endpoint do [Contrato Ollama](#contrato-ollama) ou para uma **operação local** (SQLite, arquivo ou processo). "Etapa" é onde a ação passa a existir.
+
+#### Estrutura geral
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│ Memoteca                            ● Ollama 0.30     Sobre   │
+├──────────────────┬────────────────────────────────────────────┤
+│ Projetos     [+] │ Projeto: Estudos de Rust          [Editar] │
+│ ▾ Estudos Rust   │ ────────────────────────────────────────── │
+│    Conversa 1  ● │ Você: ...                                  │
+│    Conversa 2    │ ▸ Raciocínio        Modelo: ...            │
+│   [+ Conversa]   │                                            │
+│ ▸ Receitas       │ ┌────────────────────────────────────────┐ │
+│ ──────────────── │ │ Digite sua mensagem…          [Enviar] │ │
+│ ◇ Memória global │ └────────────────────────────────────────┘ │
+│ ⚙ Configurações  │ Modelo · Temperatura · Contexto · Manter   │
+└──────────────────┴────────────────────────────────────────────┘
+```
+
+- Janela única, com `single-instance lock`. **Uma conversa ativa por vez.**
+- A sidebar lista projetos e, dentro de cada um, as conversas. **O botão "Nova conversa" só existe dentro de um projeto**, e não há conversa avulsa.
+- Rodapé da sidebar: Memória global, Configurações. "Sobre" fica no cabeçalho.
+- Indicador de status do Ollama no cabeçalho: verde (pronto), amarelo (versão antiga ou iniciando), vermelho (fora do ar ou porta ocupada).
+
+#### T01 — Inicialização
+
+Tela curta enquanto o app verifica o ambiente (estados de inicialização do contrato).
+
+| Elemento ou ação | Endpoint ou operação | Etapa |
+| --- | --- | --- |
+| Verificar o Ollama ao abrir | `GET /api/version`, `GET /api/tags` e detecção local da instalação | E06 |
+| Iniciar o Ollama quando instalado e parado | Local: iniciar `ollama serve` | E06 |
+| Encaminhar ao onboarding, ao app ou a um erro | Local: estado de inicialização | E06, E08 |
+
+#### T02 — Onboarding
+
+Passos, nesta ordem, com botão "Voltar" quando fizer sentido. Nenhum passo exige terminal.
+
+| Passo | Conteúdo | Ações | Endpoint ou operação | Etapa |
+| --- | --- | --- | --- | --- |
+| 1. Boas-vindas | O que o Memoteca faz. Nota curta: "O Ollama é um software separado, obtido do site oficial. O Memoteca é independente e não é afiliado a ele." | Continuar | Local | E08 |
+| 2. Ollama | Detecta a instalação. Se faltar, explica e oferece instalar, com progresso | Instalar; Tentar de novo | Local: baixar, validar e executar o instalador; `GET /api/version` | E07, E08 |
+| 3. Modelo | Catálogo curado (nome amigável, tamanho, RAM/VRAM estimada, descrição) e campo livre para qualquer modelo | Escolher; digitar nome; ver espaço livre | Local: catálogo embutido e espaço em disco | E08 |
+| 4. Download | Barra de progresso, tamanho, botão cancelar | Baixar; Cancelar; Tentar de novo | `POST /api/pull`; confirma com `GET /api/tags` | E08 |
+| 5. Pronto | Resumo e entrada no app | Começar | Local: marcar onboarding como concluído | E08 |
+
+Falhas previstas, todas com mensagem amigável e botão de recuperação: sem internet, sem espaço em disco, instalador inválido, instalação parcial, download interrompido e modelo inexistente (ver o plano de robustez).
+
+#### T03 — Projeto (criar e editar)
+
+Aberta a partir do botão "+" da sidebar ou de "Editar". Ver o fluxo F3.
+
+| Elemento ou ação | Endpoint ou operação | Etapa |
+| --- | --- | --- |
+| Nome do projeto | Local: salvar projeto | E09 |
+| System prompt fixo | Local: salvar projeto | E09 |
+| Modelo padrão (lista dos modelos instalados, opcional) | `GET /api/tags`; Local: salvar projeto | E09 |
+| Memórias do projeto (atalho para a T06) | Local | E11 |
+| Excluir projeto, com confirmação que explica o que será apagado | Local: excluir projeto, conforme a regra da E04 | E09 |
+
+#### T04 — Conversa
+
+Tela principal de uso. Ver o fluxo F4.
+
+| Elemento ou ação | Endpoint ou operação | Etapa |
+| --- | --- | --- |
+| Lista de mensagens, persistida | Local: ler mensagens | E10 |
+| Enviar mensagem (Enter), com streaming | `POST /api/chat` | E10 |
+| Cancelar geração | Fechar a conexão do `POST /api/chat` | E10 |
+| Bloco "Raciocínio" colapsado, só se o modelo emitir `thinking` | Dados do mesmo stream | E10 |
+| Regenerar a última resposta (substitui a anterior) | `POST /api/chat`; Local: substituir mensagem | E10 |
+| Título da conversa, truncado da primeira mensagem e editável | Local: salvar conversa | E10 |
+| Modelo da conversa (herdado do projeto, sobrescrevível) | `GET /api/tags`, `POST /api/show`; Local: salvar conversa | E10 |
+| Temperatura, contexto (`num_ctx`) e "manter na memória" (`keep_alive`) | Local: salvar conversa; enviados em `options` e `keep_alive` | E10 |
+| Botão "Sugerir memórias desta conversa" | Abre a T07 | E12 |
+| Excluir conversa, editar mensagem | **A definir na E10**; a tela não define o comportamento | E10 |
+| Renderização de links nas respostas | **A definir na E10** (ver Registro de decisões) | E10 |
+
+Mensagem de erro de envio aparece **dentro da conversa**, abaixo da mensagem do usuário, que nunca é perdida, com o botão "Tentar de novo".
+
+#### T05 — Sidebar
+
+| Elemento ou ação | Endpoint ou operação | Etapa |
+| --- | --- | --- |
+| Listar projetos e conversas | Local: ler projetos e conversas | E09, E10 |
+| Selecionar conversa (torna-a a ativa) | Local | E10 |
+| Nova conversa (só dentro de um projeto) | Local: criar conversa | E10 |
+| Novo projeto | Abre a T03 | E09 |
+
+#### T06 — Memórias
+
+Tela dedicada, com duas abas: **Projeto** (do projeto atual) e **Global**.
+
+| Elemento ou ação | Endpoint ou operação | Etapa |
+| --- | --- | --- |
+| Listar memórias do escopo | Local: ler memórias | E11 |
+| Criar memória | Local: salvar memória | E11 |
+| Editar memória | Local: salvar memória | E11 |
+| Remover memória (silencioso, sem indicador de "contexto mudou") | Local: excluir memória | E11 |
+
+#### T07 — Sugestões de memória
+
+Diálogo aberto pelo botão da T04. Ver o fluxo F6.
+
+| Elemento ou ação | Endpoint ou operação | Etapa |
+| --- | --- | --- |
+| Gerar sugestões | `POST /api/chat` (`stream: false`, `format`) | E12 |
+| Escolher o escopo de cada sugestão | A definir na E12 | E12 |
+| Aprovar uma sugestão | Local: criar exatamente uma memória | E12 |
+| Rejeitar uma sugestão, ou fechar sem decidir | Nada é criado | E12 |
+
+#### T08 — Configurações
+
+| Seção | Ação | Endpoint ou operação | Etapa |
+| --- | --- | --- | --- |
+| Ollama | Ver estado e versão; reiniciar o servidor iniciado pelo app | `GET /api/version`; Local: processo | E06 |
+| Modelos | Ver modelos instalados; baixar outro modelo | `GET /api/tags`, `POST /api/pull` | E08 |
+| Dados | Exportar backup | Local: gravar arquivo | E13 |
+| Dados | Importar backup, com confirmação | Local: ler arquivo e gravar no banco | E13 |
+| Sobre | Abre a T09 | Local | E16 |
+
+#### T09 — Sobre
+
+Texto do aviso de independência (o mesmo do `README.md`):
+
+> **Memoteca** é um projeto independente. Não é afiliado, patrocinado, endossado nem mantido pelo Ollama ou por seus mantenedores, e não tem relação direta com o projeto ou com a marca Ollama. "Ollama" é marca de seus respectivos titulares e aparece aqui apenas para indicar com qual software este aplicativo funciona. O Memoteca não redistribui o Ollama: ele é obtido da fonte oficial e continua sendo software separado, sob a própria licença.
+
+Também mostra a versão do app, a licença (MIT, "Memoteca contributors") e o link do repositório. Sem logotipo, ícone ou identidade visual do Ollama.
+
+#### T10 — Padrões de mensagem de erro
+
+| Padrão | Quando | Exemplo |
+| --- | --- | --- |
+| Faixa persistente no topo | Estado que afeta o app inteiro | Ollama fora do ar, versão antiga, porta ocupada |
+| Diálogo | Falha que bloqueia e exige decisão | Disco insuficiente, banco indisponível, importação inválida |
+| Mensagem na conversa | Falha de um envio | Conexão caiu no meio da resposta |
+| Aviso breve (toast) | Confirmação ou aviso sem decisão | Backup exportado |
+
+Toda mensagem diz **o que aconteceu** em linguagem simples, **o que fazer** e oferece um botão de ação. Nunca mostra código, texto cru de API nem stack trace. Os detalhes técnicos vão para o log local (local e retenção definidos na E14).
+
+#### Fluxos
+
+**F1 — Abrir o app.** T01 verifica o ambiente → estado "Pronto": abre o app principal na última conversa ativa; "Sem modelos" ou "Não instalado": T02 no passo correspondente; "Instalado, parado": inicia o servidor e verifica de novo; "Versão antiga": abre o app com a faixa de aviso; "Porta ocupada": faixa e diálogo, sem iniciar nada.
+
+**F2 — Primeiro uso (onboarding).** T02, passos 1 a 5. Ao concluir, F1 volta a "Pronto".
+
+**F3 — Criar e gerir projetos.** "+" na sidebar → T03 (nome, system prompt, modelo padrão opcional) → salvar → projeto aparece na sidebar. Editar e excluir (com confirmação) pela T03.
+
+**F4 — Conversar.** Dentro de um projeto, "Nova conversa" → T04 herda o modelo do projeto (ou, sem modelo padrão no projeto, o da primeira conversa criada) → o usuário escreve e envia → o app monta o contexto (system prompt do projeto, mais as memórias a partir da E11) → `POST /api/chat` com streaming → texto aparece aos poucos, com o raciocínio colapsado quando houver → ao terminar, a resposta é gravada. Cancelar mantém o texto parcial. Regenerar substitui a última resposta.
+
+**F5 — Memória manual.** T06 → criar, editar ou remover. Vale para as gerações seguintes e nunca altera mensagens já geradas.
+
+**F6 — Sugerir memórias.** Botão na T04 → T07 chama o modelo uma vez → lista de sugestões → aprovar ou rejeitar cada uma → só as aprovadas viram memória. O histórico da conversa não muda.
+
+**F7 — Exportar e importar.** T08 → Dados → Exportar (escolhe o destino, grava o arquivo) ou Importar (escolhe o arquivo, valida, confirma, aplica de forma atômica).
+
+**F8 — Fechar o app.** O app encerra apenas o Ollama que ele iniciou. Um Ollama externo continua rodando.
+
+**F9 — Qualquer falha previsível.** Mensagem amigável no padrão da T10 e, quando possível, recuperação automática (rollback ou limpeza) ou botão de tentar de novo.
+
+#### Cobertura dos critérios de "MVP pronto"
+
+| Critério | Telas e fluxos |
+| --- | --- |
+| 1. Onboarding sem terminal até ter um modelo | F1, F2, T01, T02 |
+| 2. Projeto, system prompt e memórias manuais | F3, F5, T03, T06 |
+| 3. Conversa com modelo, parâmetros e streaming | F4, T04 |
+| 4. Sugestões de memória sob demanda | F6, T07 |
+| 5. Memórias injetadas (projeto e global) | F4, F5, T04, T06 |
+| 6. Exportar e importar | F7, T08 |
+| 7. Persistência ao fechar e reabrir | F1, T05 |
+| 8. Falhas previsíveis com mensagem amigável | F9, T10 |
 
 ### Plano de testes de robustez
 
-_A preencher na E03._
+Escrito na E03. Cada cenário tem um identificador `Rnn`, e o nome do teste que o cobre cita esse identificador. Na E14, um teste confere que todo `Rnn` desta lista tem ao menos um teste. Os cenários marcados **(falha)** vêm dos critérios de falha das etapas.
+
+#### Estratégia de testes
+
+| Camada | O que testa | Ferramenta | Roda em |
+| --- | --- | --- | --- |
+| Unidade (Rust) | Regras puras: versão, progresso do pull, montagem de contexto, parser de stream | `cargo test` | `pnpm check` e CI |
+| Integração (Rust) | Cliente do Ollama, ciclo de vida, instalador, banco e import/export, contra o servidor falso e abstrações falsas | `cargo test` | `pnpm check` e CI |
+| Componente (frontend) | Telas e estados, com os comandos do Tauri simulados | Vitest e Testing Library | `pnpm check` e CI |
+| E2E | O app real, do clique ao banco, inclusive fechar e reabrir | Playwright conectado ao WebView2 por CDP | CI, a partir da E15 |
+| Manual | Instalação real do Ollama, download real, Windows limpo | Checklist da E15, em VM | Antes do release |
+
+- **Servidor Ollama falso:** um pequeno servidor HTTP local que imita `/api/version`, `/api/tags`, `/api/show`, `/api/pull` e `/api/chat`, com **injeção de falhas** por cenário (conexão recusada, linha partida em dois pedaços, JSON inválido, queda no meio do stream, atraso, `404`, linha `error`, resposta de outro programa). Uma única implementação serve aos testes Rust e ao E2E. A biblioteca HTTP usada nele é escolhida na E05, que avisa o usuário se for uma dependência nova.
+- **Abstrações injetáveis** para o que não dá para fazer de verdade em teste: instalador (`Instalador`), espaço livre em disco (`EspacoEmDisco`) e iniciar processo (`Processo`). Os testes usam versões falsas. No E2E, um recurso de compilação de testes troca as reais pelas falsas, e **esse recurso nunca entra no build de release**.
+- **E2E por CDP:** o app abre com `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<porta>` e o Playwright se conecta a ele. É a técnica já usada para verificar o executável na E01. Ela não é o caminho oficial do Tauri (`tauri-driver`), então a E15 **começa com um teste-piloto** (abrir, interagir, fechar e reabrir). Se o piloto falhar, a alternativa é o `tauri-driver`, e a mudança é registrada no Registro de decisões. Fechar e reabrir significa encerrar o processo e iniciar outro.
+- O servidor falso ocupa a porta `11434` no CI, que não tem Ollama real. Em máquina de desenvolvimento com Ollama real rodando, o E2E se recusa a iniciar para não interferir.
+
+#### Cenários
+
+| ID | Cenário | Como é simulado | Resultado esperado | Etapa do teste |
+| --- | --- | --- | --- | --- |
+| R01 | Ollama não instalado | Detector de instalação falso devolve "não encontrado" | Estado "Não instalado" e onboarding no passo do Ollama | E06 |
+| R02 | Porta `11434` ocupada por outro programa **(falha)** | Servidor falso que responde HTML, JSON sem `version` ou só aceita a conexão | Erro `PortaOcupada`, nenhum processo iniciado, mensagem amigável | E06 |
+| R03 | Ollama externo já rodando | Servidor falso na porta, iniciado fora do app | O app o reutiliza, e ao fechar ele continua rodando | E06 |
+| R04 | Fechar o app encerra o Ollama que ele iniciou, inclusive em fechamento forçado **(falha)** | Processo falso iniciado pelo app, que depois é finalizado à força | Nenhum processo órfão | E06 |
+| R05 | Versão abaixo da mínima | `/api/version` falso devolve `0.29.9` | Faixa de aviso amigável, uso permitido | E06 |
+| R06 | Versão com sufixo ou formato inesperado | `0.31.0-rc1`, texto sem versão | Sufixo ignorado; formato inválido vira `PortaOcupada` | E05 |
+| R07 | Disco cheio antes de baixar um modelo **(falha)** | `EspacoEmDisco` falso devolve menos que o tamanho do modelo | Download bloqueado ou alertado antes de começar, conforme a regra da E08 | E08 |
+| R08 | Disco cheio antes de instalar o Ollama **(falha)** | `EspacoEmDisco` falso devolve menos de 4 GB | Instalação bloqueada antes de começar | E07 |
+| R09 | Download de modelo interrompido **(falha)** | Servidor falso fecha a conexão no meio do `/api/pull` | Estado limpo conforme a regra da E08, mensagem amigável e "Tentar de novo" | E08 |
+| R10 | Modelo inexistente no campo livre **(falha)** | Servidor falso responde `404` ou linha `error` | Mensagem amigável, sem o texto cru da API | E08 |
+| R11 | Sem internet ao baixar o instalador ou o modelo **(falha)** | Download falso falha por conexão; servidor falso recusa a conexão | Mensagem amigável, nada fica pela metade | E07, E08 |
+| R12 | Instalação parcial **(falha)** | `Instalador` falso sai com erro ou é interrompido no meio | Rollback, sem resíduo, mensagem e "Tentar de novo" | E07 |
+| R13 | Instalador baixado corrompido ou inválido | `Instalador` falso falha na validação | O arquivo não é executado e é removido | E07 |
+| R14 | Instalador baixado removido ao fim | Sucesso e falha do `Instalador` falso | O arquivo não existe depois, nos dois casos | E07 |
+| R15 | Pedido de elevação do Windows recusado | `Instalador` falso devolve o código de recusa | Mensagem amigável e "Tentar de novo" | E07 |
+| R16 | Ollama cai durante o streaming **(falha)** | Servidor falso fecha a conexão no meio do `/api/chat` | `ConexaoInterrompida`, texto parcial e mensagem do usuário preservados, "Tentar de novo" | E05, E10 |
+| R17 | Envio com o Ollama fora do ar **(falha)** | Servidor falso desligado | `OllamaForaDoAr`, a mensagem do usuário não é perdida | E10 |
+| R18 | Linha do stream partida entre dois pedaços | Servidor falso divide uma linha em dois pedaços | Resposta reconstruída sem perda | E05 |
+| R19 | JSON inválido no stream **(falha)** | Servidor falso envia uma linha corrompida | `RespostaInvalida`, parcial preservado | E05 |
+| R20 | Stream sem `thinking` | Servidor falso sem campo `thinking` | Sem erro e sem seção de raciocínio | E05, E10 |
+| R21 | Cancelar a geração | Cancelar no meio do stream | Conexão fechada e nenhum texto novo depois | E05, E10 |
+| R22 | Ollama travado, sem enviar bytes | Servidor falso fica em silêncio além do limite | `TempoEsgotado` | E05 |
+| R23 | Modelo removido depois de escolhido | Servidor falso responde `404` no `/api/chat` | `ModeloNaoEncontrado`, com oferta de baixar | E10 |
+| R24 | Modelo sem suporte a conversa | `/api/show` falso sem `completion` | `ModeloSemSuporte`, o modelo não é oferecido | E10 |
+| R25 | Resposta cortada por limite | Servidor falso termina com `done_reason: "length"` | Aviso de resposta cortada | E10 |
+| R26 | Banco indisponível ou corrompido ao abrir **(falha)** | Arquivo de banco travado ou inválido | Diálogo amigável, dados não são apagados e há caminho para o backup | E04, E14 |
+| R27 | Migração falha **(falha)** | Migração falsa que falha no meio | Banco como estava e mensagem amigável | E04 |
+| R28 | Arquivo de importação inválido, truncado ou de versão desconhecida **(falha)** | Arquivos de teste corrompidos | Recusado e nenhum dado alterado | E13 |
+| R29 | Importação falha no meio **(falha)** | Falha injetada durante a gravação | Nada fica importado pela metade | E13 |
+| R30 | Exportação sem permissão ou sem espaço | Destino somente leitura ou disco falso cheio | Mensagem amigável e nenhum arquivo parcial deixado | E13 |
+| R31 | Sugestão de memória malformada ou vazia **(falha)** | Servidor falso devolve JSON fora do esquema ou vazio | Mensagem amigável e nenhuma memória criada | E12 |
+| R32 | Segunda instância do app **(falha)** | Abrir o executável duas vezes | Uma só janela, a existente vem para a frente (verificada na E01) | E15 |
+| R33 | Fechar o app durante download ou geração | Fechar no meio | Estado consistente na próxima abertura; o destino do texto parcial é decidido na E10 | E10, E14 |
+
+Os quatro cenários de falha do conceito (disco cheio, porta ocupada, download interrompido e instalação parcial) correspondem a **R07 e R08**, **R02**, **R09** e **R12**.
