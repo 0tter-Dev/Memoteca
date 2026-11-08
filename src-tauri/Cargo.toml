@@ -21,12 +21,13 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 futures-util = "0.3.34"
-reqwest = { version = "0.13.5", default-features = false, features = ["stream"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "stream", "system-proxy"] }
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+sha2 = "0.11.1"
 tauri = { version = "2", features = [] }
-tokio = { version = "1.54.1", features = ["macros", "time", "rt", "sync"] }
+tokio = { version = "1.54.1", features = ["macros", "time", "rt", "sync", "fs", "io-util"] }
 tokio-util = "0.7.20"
 uuid = { version = "1.29.1", features = ["v7"] }
 
@@ -34,7 +35,7 @@ uuid = { version = "1.29.1", features = ["v7"] }
 tauri-plugin-single-instance = "2"
 
 [target."cfg(windows)".dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security", "Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 tokio = { version = "1.54.1", features = ["macros", "time", "rt-multi-thread", "net", "io-util", "sync"] }

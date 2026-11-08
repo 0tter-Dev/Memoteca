@@ -43,13 +43,15 @@ Fora do escopo por enquanto: resumo acumulado do projeto, sincronização entre 
 
 ## Status
 
-Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
+Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
 
 O app abre o banco local ao iniciar, aplica as migrações e mostra uma mensagem amigável se não conseguir.
 
 O backend sabe consultar a versão, listar modelos, baixar modelos e conversar com streaming, com erros tipados. Os testes rodam contra um servidor Ollama falso.
 
-Etapa **E06** (ciclo de vida do Ollama) em revisão: ao abrir, o app detecta o Ollama, reutiliza o que já está rodando (e nunca o encerra) ou inicia o instalado, e mostra a versão ou uma mensagem amigável. O Ollama que o próprio app iniciou é encerrado ao fechar, inclusive se o app for finalizado à força. Ainda não há instalação guiada nem telas de conversa. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
+Ao abrir, o app detecta o Ollama, reutiliza o que já está rodando (e nunca o encerra) ou inicia o instalado, e mostra a versão ou uma mensagem amigável. O Ollama que o próprio app iniciou é encerrado ao fechar, inclusive se o app for finalizado à força.
+
+Etapa **E07** (instalação silenciosa do Ollama) em revisão: sem Ollama instalado, o app oferece instalá-lo. Ele baixa o instalador oficial (cerca de 1,6 GB) com progresso, confere o SHA-256 e a assinatura digital da Ollama Inc., instala sem pedir administrador e desfaz tudo se algo falhar. Ainda não há o onboarding completo nem telas de conversa. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
 
 ## Stack
 

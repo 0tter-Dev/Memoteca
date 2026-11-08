@@ -20,8 +20,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E03 | Contrato com a API do Ollama, telas e fluxos | E01 | concluída |
 | E04 | Persistência SQLite e modelo de dados | E01 | concluída |
 | E05 | Cliente da API do Ollama (HTTP e streaming) | E03 | concluída |
-| E06 | Ciclo de vida do Ollama | E05 | em revisão |
-| E07 | Instalação silenciosa do Ollama | E06 | pendente |
+| E06 | Ciclo de vida do Ollama | E05 | concluída |
+| E07 | Instalação silenciosa do Ollama | E06 | em revisão |
 | E08 | Onboarding e catálogo de modelos | E07 | pendente |
 | E09 | Projetos | E03, E04 | pendente |
 | E10 | Conversas e chat com streaming | E05, E09 | pendente |
@@ -346,7 +346,16 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - O instalador baixado é removido ao fim, com sucesso ou falha.
 - A execução do instalador passa por uma abstração que os testes substituem por uma versão falsa. A instalação real é verificada no checklist manual da E15.
 
-**Decisões a tomar:** origem e parâmetros exatos do instalador silencioso, como o instalador é validado (assinatura digital, hash…) e como tratar o pedido de elevação de privilégio do Windows.
+**Decisões a tomar:** origem e parâmetros exatos do instalador silencioso, como o instalador é validado (assinatura digital, hash…) e como tratar o pedido de elevação de privilégio do Windows. _Decididas com o usuário, ver o Registro de decisões._
+
+**Como ficou (E07):**
+
+- **Código:** módulo `instalador` em `src-tauri/src/instalador/`: `fonte` (release e download com SHA-256), `disco` (`EspacoEmDisco`), `assinatura` (`ValidadorDeAssinatura`), `executor` (`ExecutorDoInstalador`) e `erro`. `InstaladorDoOllama::instalar` orquestra o fluxo. As três abstrações, mais o detector de instalação da E06, são as que os testes substituem por versões falsas.
+- **Fluxo:** recusa se já há Ollama instalado; consulta a release mais recente em `api.github.com/repos/ollama/ollama/releases/latest` (URL, tamanho e SHA-256 do `OllamaSetup.exe`); confere o espaço e **bloqueia antes de baixar**; baixa com progresso calculando o SHA-256; confere tamanho, hash e assinatura (publicador `Ollama Inc.`); executa o instalador; confere que o `ollama.exe` apareceu.
+- **Espaço necessário:** tamanho do instalador (hoje 1,57 GB) mais 4 GB para a instalação (documentação do Ollama no Windows). Se a pasta de download e a de instalação estão na mesma unidade, os valores somam, pois o instalador só é apagado ao fim. Os modelos exigem espaço à parte (E08).
+- **Rollback:** o instalador baixado é removido em qualquer desfecho. Uma instalação parcial é desfeita pelo desinstalador (`unins000.exe`) e, se a pasta ainda existir, ela é removida, **mas só se não existia antes da tentativa**. O app nunca apaga uma pasta que já era do usuário e nunca toca nos modelos. Se algo não puder ser removido (por exemplo, arquivo em uso), a mensagem avisa.
+- **Interface:** no estado "não instalado", a tela mostra o botão "Instalar o Ollama", o progresso (fase e, no download, porcentagem e tamanho), "Cancelar" e, se falhar, a mensagem amigável com "Tentar de novo". Ao concluir, a tela detecta e inicia o Ollama. O onboarding completo é da E08.
+- **Verificado com dados reais, sem instalar:** a consulta da release, o TLS do Windows e os redirecionamentos funcionam, a assinatura do `ollama.exe` instalado nesta máquina é aceita com o publicador `Ollama Inc.` e recusada com outro, e o espaço livre é lido corretamente. O download completo e a execução do instalador real **não** foram feitos aqui (a máquina já tem Ollama), e ficam no checklist manual da E15, em Windows limpo.
 
 ### E08 — Onboarding e catálogo de modelos
 
@@ -564,6 +573,11 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Ferramenta de E2E | Playwright conectado ao WebView2 por CDP. A E15 começa com um teste-piloto, e a alternativa, se falhar, é o `tauri-driver` | 2026-11-08 |
 | Decisões de design do contrato Ollama (E03) | O Ollama só é acessado pelo backend Rust; endereço fixo `127.0.0.1:11434`; `think` não é enviado e o `thinking` do histórico não é reenviado; só `temperature` e `num_ctx` em `options`; sugestões de memória por `/api/chat` com `format` e sem stream. Valem como aprovadas com o merge da E03 | 2026-11-08 |
 | Encerramento garantido do Ollama | Job Object do Windows por processo iniciado, com `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, via `windows-sys` (dependência só do Windows, já presente na árvore do Tauri, com `unsafe` isolado em `job.rs`). Se o app for finalizado à força, o Windows fecha o job e encerra o Ollama e os filhos dele. Se não for possível criar o job, nada é iniciado | 2026-11-08 |
+| Origem do instalador do Ollama | A **última versão oficial**: o app consulta a API de releases do GitHub do Ollama (a mesma release para a qual `ollama.com/download/OllamaSetup.exe` redireciona), que informa URL, tamanho e SHA-256, e baixa o `OllamaSetup.exe`. A URL de download precisa ser `https` e do host `github.com` | 2026-11-08 |
+| Validação do instalador | SHA-256 conferido com o da release **e** assinatura digital válida com publicador `Ollama Inc.`, lida pelo PowerShell do Windows (`Get-AuthenticodeSignature`), sem dependência nova. Se qualquer uma falhar, o instalador não é executado e é removido | 2026-11-08 |
+| TLS do cliente HTTP | TLS do Windows (`native-tls`, SChannel), com o proxy do sistema (`system-proxy`). O cliente do Ollama local continua sem TLS e sem proxy | 2026-11-08 |
+| Execução do instalador e elevação | `OllamaSetup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-`, na pasta padrão do usuário, **sem elevar**: o Memoteca nunca pede administrador. Se o Windows exigir elevação (erro 740), a mensagem orienta a instalar pelo site oficial | 2026-11-08 |
+| Dependências do instalador (E07) | `reqwest` com `native-tls` e `system-proxy` (traz `native-tls`, `schannel`, `windows-registry`), `sha2`, e as features `fs` e `io-util` do `tokio` e `Win32_Storage_FileSystem` do `windows-sys`. Avisado no PR da E07 | 2026-11-08 |
 | Dependências do cliente Ollama (E05) | `reqwest` (sem TLS e sem proxy, só `stream`), `tokio`, `tokio-util` (cancelamento), `futures-util`, `serde` e `serde_json`. Todas já estavam na árvore de dependências do Tauri, e agora são declaradas diretamente. O servidor falso usa só `tokio` (dependência de desenvolvimento), sem `axum` ou `hyper` próprios. Avisado no PR da E05; vale como aprovada com o merge | 2026-11-08 |
 | Cobertura de testes no CI | Não exigida por enquanto, sem ferramenta de cobertura nem dependência nova. O código ainda é mínimo e um percentual não diria nada. Reavaliar na E15, com o código do MVP pronto; se entrar, deve entrar também no `pnpm check` | 2026-11-08 |
 | Significado de "build" no CI | O CI roda só `pnpm check`. O build é o do frontend (`tsc && vite build`, parte do `pnpm check`), e o Rust é compilado por `clippy` e `cargo test`. O executável (`tauri build --no-bundle`, com LTO) não roda no CI por custo, e o build do instalador entra na E16 | 2026-11-08 |
@@ -574,7 +588,6 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | --- | --- |
 | Confirmar a versão mínima do Ollama (0.30.0) contra um Ollama real dessa versão. Na E06 só havia a 0.32.9 para testar | E15 (checklist manual) |
 | Comportamento de links nas respostas do modelo (abrir no navegador exige o plugin `opener` e uma permissão nova; por ora o app não abre links) | E10 |
-| Origem, parâmetros e validação do instalador do Ollama; elevação de privilégio | E07 |
 | Lista inicial do catálogo de modelos | E08 |
 | Margem de espaço (alerta ou bloqueio) | E08 |
 | Download interrompido: limpar ou retomar | E08 |
@@ -707,7 +720,7 @@ Limites de tempo iniciais, ajustáveis (`Limites` no cliente): conexão 3 s (no 
 
 - **Instalação existente:** procurar `ollama.exe` nas pastas do `PATH` e, depois, em `%LOCALAPPDATA%ProgramsOllama` (local padrão da instalação por usuário). **Confirmado na E06:** na máquina de desenvolvimento o Ollama está instalado em outro disco, e só o `PATH` o encontra. O instalador também registra o `InstallLocation` no registro de desinstalação do usuário, que a E07 pode usar se for preciso.
 - **Porta e reuso:** o app testa `GET /api/version`. Se é Ollama, reutiliza e **nunca o encerra**. Se outro programa responde, `PortaOcupada`. Se ninguém responde e há instalação, o app inicia `ollama serve` e passa a ser dono desse processo.
-- **O Ollama oficial roda em segundo plano** depois de instalado (ícone de bandeja) e pode iniciar com o Windows. Encontrá-lo já rodando é o caso comum, e ele conta como externo. Um Ollama que o instalador deixe em execução ao terminar também conta como externo. **(a validar na E07.)**
+- **O Ollama oficial roda em segundo plano** depois de instalado (ícone de bandeja) e pode iniciar com o Windows. Encontrá-lo já rodando é o caso comum, e ele conta como externo. Um Ollama que o instalador deixe em execução ao terminar também conta como externo. **(a validar na E15, no checklist manual em Windows limpo: se o instalador silencioso deixa o Ollama rodando e se o `PATH` do usuário é atualizado.)**
 - **Instalador oficial:** segundo a documentação do Ollama, não exige administrador e instala no diretório do usuário, com pelo menos 4 GB livres para os binários, fora o espaço dos modelos. Parâmetros do modo silencioso, validação e elevação ficam para a E07.
 
 #### Estados de inicialização

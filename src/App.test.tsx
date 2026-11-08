@@ -168,3 +168,40 @@ describe("App e o Ollama", () => {
     expect(alerta).not.toHaveTextContent("Cannot read");
   });
 });
+
+describe("App e a instalação do Ollama", () => {
+  beforeEach(() => {
+    invoke.mockReset();
+  });
+
+  it("oferece instalar o Ollama quando ele não está instalado", async () => {
+    simularBackend({
+      ollama: Promise.resolve({
+        estado: "nao_instalado",
+        versao: null,
+        origem: null,
+        modelosInstalados: null,
+        aviso: null,
+        mensagem: "O Ollama não está instalado neste computador.",
+      }),
+    });
+    render(<App />);
+
+    expect(
+      await screen.findByRole("button", { name: "Instalar o Ollama" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText("O Ollama não está instalado neste computador."),
+    ).toBeVisible();
+  });
+
+  it("não oferece instalar quando o Ollama já está em execução", async () => {
+    simularBackend();
+    render(<App />);
+    await screen.findByText("Ollama 0.32.9 em execução.");
+
+    expect(
+      screen.queryByRole("button", { name: "Instalar o Ollama" }),
+    ).not.toBeInTheDocument();
+  });
+});
