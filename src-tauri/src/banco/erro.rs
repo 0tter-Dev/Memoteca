@@ -26,6 +26,9 @@ pub enum ErroBanco {
     NaoEncontrado,
     /// A operação viola uma regra dos dados (por exemplo, memória de projeto sem projeto).
     Invalido(String),
+    /// O usuário informou algo que não serve (nome vazio, texto grande demais). A mensagem já
+    /// está em pt-BR e pode ser mostrada como está.
+    Rejeitado(String),
     /// Falha inesperada.
     Interno(String),
 }
@@ -65,6 +68,7 @@ impl ErroBanco {
             Self::Invalido(_) => {
                 "Não foi possível salvar: os dados informados não são válidos.".to_owned()
             }
+            Self::Rejeitado(mensagem) => mensagem.clone(),
             Self::Interno(_) => {
                 "Ocorreu um problema inesperado ao salvar seus dados. Tente de novo.".to_owned()
             }
@@ -89,6 +93,7 @@ impl fmt::Display for ErroBanco {
             ),
             Self::NaoEncontrado => write!(f, "item não encontrado"),
             Self::Invalido(detalhe) => write!(f, "dados inválidos: {detalhe}"),
+            Self::Rejeitado(mensagem) => write!(f, "dados rejeitados: {mensagem}"),
             Self::Interno(detalhe) => write!(f, "erro interno: {detalhe}"),
         }
     }

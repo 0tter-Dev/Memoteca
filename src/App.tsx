@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
 import Onboarding from "./Onboarding";
+import TelaPrincipal from "./TelaPrincipal";
 import type { EstadoOllama } from "./tipos";
 
 const MENSAGEM_DADOS =
@@ -91,12 +92,20 @@ function App() {
     );
   }
 
-  const carregando = ollama === null || onboardingConcluido === null;
+  if (ollama === null || onboardingConcluido === null) {
+    return (
+      <main className="app">
+        <h1>Memoteca</h1>
+        {alertaDeDados}
+        <p role="status">Carregando…</p>
+      </main>
+    );
+  }
+
   const precisaDeOnboarding =
-    !carregando &&
-    (!onboardingConcluido ||
-      ollama.estado !== "em_execucao" ||
-      (ollama.modelosInstalados ?? 0) === 0);
+    !onboardingConcluido ||
+    ollama.estado !== "em_execucao" ||
+    (ollama.modelosInstalados ?? 0) === 0;
 
   if (precisaDeOnboarding) {
     return (
@@ -113,22 +122,7 @@ function App() {
     );
   }
 
-  return (
-    <main className="app">
-      <h1>Memoteca</h1>
-      {alertaDeDados ?? <p>Em construção.</p>}
-      {ollama?.estado === "em_execucao" && (
-        <>
-          <p role="status">Ollama {ollama.versao} em execução.</p>
-          {ollama.aviso && (
-            <p role="status" className="aviso">
-              {ollama.aviso}
-            </p>
-          )}
-        </>
-      )}
-    </main>
-  );
+  return <TelaPrincipal ollama={ollama} erroDeDados={erroDeDados} />;
 }
 
 export default App;

@@ -46,6 +46,34 @@ export interface FalhaDoDownload {
   podeContinuar: boolean;
 }
 
+/** Projeto, como o backend devolve. */
+export interface Projeto {
+  id: string;
+  nome: string;
+  systemPrompt: string;
+  modeloPadrao: string | null;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+/** Campos editáveis de um projeto. */
+export interface DadosProjeto {
+  nome: string;
+  systemPrompt: string;
+  modeloPadrao: string | null;
+}
+
+/** O que será apagado junto com um projeto. */
+export interface ResumoExclusaoProjeto {
+  conversas: number;
+  mensagens: number;
+  memorias: number;
+}
+
+/** Limites de tamanho, os mesmos que o backend aplica. */
+export const NOME_DO_PROJETO_MAXIMO = 100;
+export const INSTRUCOES_DO_PROJETO_MAXIMO = 20_000;
+
 /** Texto de tamanho em MB ou GB, com vírgula decimal. */
 export function formatarTamanho(bytes: number): string {
   const gigabyte = 1024 ** 3;

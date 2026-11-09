@@ -43,7 +43,7 @@ Fora do escopo por enquanto: resumo acumulado do projeto, sincronização entre 
 
 ## Status
 
-Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) e **E07** (instalação silenciosa do Ollama) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
+Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) e **E07** (instalação silenciosa do Ollama) e **E08** (onboarding e catálogo de modelos) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
 
 O app abre o banco local ao iniciar, aplica as migrações e mostra uma mensagem amigável se não conseguir.
 
@@ -53,13 +53,15 @@ Ao abrir, o app detecta o Ollama, reutiliza o que já está rodando (e nunca o e
 
 Sem Ollama instalado, o app oferece instalá-lo: baixa o instalador oficial (cerca de 1,6 GB) com progresso, confere o SHA-256 e a assinatura digital da Ollama Inc., instala sem pedir administrador e desfaz tudo se algo falhar.
 
-Etapa **E08** (onboarding e catálogo de modelos) em revisão: na primeira vez, o app guia o usuário por boas-vindas, Ollama, escolha de um modelo (catálogo curado ou qualquer nome) e download com progresso, verificando o espaço em disco antes e permitindo continuar um download interrompido. Ainda não há telas de projetos nem de conversa. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
+Na primeira vez, o app guia o usuário por boas-vindas, Ollama, escolha de um modelo (catálogo curado ou qualquer nome) e download com progresso, verificando o espaço em disco antes e permitindo continuar um download interrompido.
+
+Etapa **E09** (projetos) em revisão: o app tem a lateral com os projetos, e dá para criar, editar e excluir projetos (com confirmação), cada um com suas instruções (system prompt) e um modelo padrão. Ainda não há telas de conversa. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
 
 ## Stack
 
 - **Shell desktop:** Tauri 2, com backend em Rust (a UI roda no WebView2; é um app instalado, não um site).
 - **Frontend:** React + TypeScript, com Vite, pnpm, Vitest, ESLint e Prettier.
-- **Interface (decidido, entra nas etapas de tela):** Tailwind CSS 4, Radix UI, Zustand, `react-markdown` com `remark-gfm` e `rehype-highlight`.
+- **Interface:** Tailwind CSS 4, Radix UI e Zustand (em uso desde a E09). `react-markdown` com `remark-gfm` e `rehype-highlight` entram quando houver conversa.
 - **Persistência:** SQLite local, via `rusqlite` (SQLite embutido), com migrações próprias e IDs UUIDv7. O banco fica em `%APPDATA%io.github.0tter-dev.memotecamemoteca.db`, com cópias de segurança em `backups` quando uma migração é aplicada.
 - **Inferência:** Ollama 0.30 ou mais recente, via API HTTP local (`127.0.0.1:11434`), com cliente em Rust (`reqwest`, `tokio`).
 - **Testes ponta a ponta (decidido, entram na E15):** Playwright conectado ao WebView2.

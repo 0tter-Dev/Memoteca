@@ -737,3 +737,219 @@ fn mensagens_amigaveis_nunca_vazam_texto_tecnico() {
         }
     }
 }
+
+// ----- E09: projetos -----
+
+fn dados_do_projeto(nome: &str, instrucoes: &str, modelo: Option<&str>) -> DadosProjeto {
+    DadosProjeto {
+        nome: nome.to_owned(),
+        system_prompt: instrucoes.to_owned(),
+        modelo_padrao: modelo.map(str::to_owned),
+    }
+}
+
+fn conversa_com_modelo(titulo: &str, modelo: Option<&str>) -> DadosConversa {
+    DadosConversa {
+        titulo: titulo.to_owned(),
+        modelo: modelo.map(str::to_owned),
+        temperature: None,
+        num_ctx: None,
+        keep_alive: None,
+    }
+}
+
+#[test]
+fn o_projeto_com_system_prompt_persiste_depois_de_fechar_e_reabrir() {
+    let pasta = PastaTemporaria::nova();
+    let arquivo = pasta.arquivo_do_banco();
+    let instrucoes =
+        "Responda sempre em português.\n\nSeja breve: no máximo 3 linhas.\n— Não use emojis. 😀";
+
+    let id = {
+        let banco = Banco::abrir(&arquivo, &pasta.pasta_de_copias()).unwrap();
+        banco
+            .criar_projeto(&dados_do_projeto(
+                "Estudos de Rust",
+                instrucoes,
+                Some("qwen3:8b"),
+            ))
+            .unwrap()
+            .id
+    };
+
+    let banco = Banco::abrir(&arquivo, &pasta.pasta_de_copias()).unwrap();
+    let projeto = banco.obter_projeto(&id).unwrap();
+    assert_eq!(projeto.nome, "Estudos de Rust");
+    assert_eq!(projeto.system_prompt, instrucoes, "o texto volta idêntico");
+    assert_eq!(projeto.modelo_padrao.as_deref(), Some("qwen3:8b"));
+}
+
+#[test]
+fn o_projeto_exige_nome_e_normaliza_os_campos() {
+    let banco = Banco::em_memoria().unwrap();
+
+    for nome in ["", "   ", "\n\t"] {
+        let Err(erro) = banco.criar_projeto(&dados_do_projeto(nome, "x", None)) else {
+            panic!("nome vazio deveria ser recusado: {nome:?}");
+        };
+        assert!(matches!(erro, ErroBanco::Rejeitado(_)));
+        assert_eq!(erro.mensagem_amigavel(), "Dê um nome ao projeto.");
+    }
+
+    let projeto = banco
+        .criar_projeto(&dados_do_projeto("  Receitas  ", "", Some("   ")))
+        .unwrap();
+    assert_eq!(projeto.nome, "Receitas", "espaços das pontas saem");
+    assert_eq!(
+        projeto.system_prompt, "",
+        "as instruções podem ficar vazias"
+    );
+    assert_eq!(
+        projeto.modelo_padrao, None,
+        "modelo em branco vira \"sem modelo\""
+    );
+
+    // O mesmo vale para editar, e uma recusa não altera o que já estava salvo.
+    assert!(matches!(
+        banco.atualizar_projeto(&projeto.id, &dados_do_projeto(" ", "novo", None)),
+        Err(ErroBanco::Rejeitado(_))
+    ));
+    assert_eq!(banco.obter_projeto(&projeto.id).unwrap(), projeto);
+}
+
+#[test]
+fn o_projeto_recusa_textos_grandes_demais_e_modelo_invalido_sem_salvar_nada() {
+    let banco = Banco::em_memoria().unwrap();
+    let nome_grande = "n".repeat(101);
+    let instrucoes_grandes = "i".repeat(20_001);
+
+    let casos = [
+        dados_do_projeto(&nome_grande, "", None),
+        dados_do_projeto("Ok", &instrucoes_grandes, None),
+        dados_do_projeto("Ok", "", Some("modelo com espaço")),
+        dados_do_projeto("Ok", "", Some("http://exemplo.com/m")),
+    ];
+    for dados in casos {
+        let Err(erro) = banco.criar_projeto(&dados) else {
+            panic!("deveria ser recusado: {dados:?}");
+        };
+        assert!(matches!(erro, ErroBanco::Rejeitado(_)), "{dados:?}");
+        let mensagem = erro.mensagem_amigavel();
+        assert!(!mensagem.to_lowercase().contains("constraint"));
+    }
+    assert!(banco.listar_projetos().unwrap().is_empty());
+
+    // No limite exato, passa (conta caracteres, e não bytes).
+    let no_limite = dados_do_projeto(&"ã".repeat(100), &"é".repeat(20_000), None);
+    assert!(banco.criar_projeto(&no_limite).is_ok());
+}
+
+#[test]
+fn os_projetos_vem_em_ordem_alfabetica_sem_diferenciar_maiusculas() {
+    let banco = Banco::em_memoria().unwrap();
+    for nome in ["banana", "Cereja", "abacate", "Banana"] {
+        banco.criar_projeto(&projeto(nome)).unwrap();
+    }
+
+    let nomes: Vec<String> = banco
+        .listar_projetos()
+        .unwrap()
+        .into_iter()
+        .map(|p| p.nome)
+        .collect();
+
+    assert_eq!(nomes, ["abacate", "banana", "Banana", "Cereja"]);
+}
+
+#[test]
+fn o_modelo_padrao_do_projeto_e_o_que_as_novas_conversas_herdam() {
+    let banco = Banco::em_memoria().unwrap();
+    let p = banco
+        .criar_projeto(&dados_do_projeto("Com padrão", "", Some("qwen3:8b")))
+        .unwrap();
+
+    assert_eq!(
+        banco.modelo_herdado_pelo_projeto(&p.id).unwrap().as_deref(),
+        Some("qwen3:8b")
+    );
+    let nova = banco
+        .criar_conversa_herdando_modelo(&p.id, "Primeira")
+        .unwrap();
+    assert_eq!(nova.modelo.as_deref(), Some("qwen3:8b"));
+
+    // O padrão do projeto vale mesmo que uma conversa antiga use outro modelo.
+    banco
+        .criar_conversa(&p.id, &conversa_com_modelo("Antiga", Some("llama3.2:3b")))
+        .unwrap();
+    let outra = banco
+        .criar_conversa_herdando_modelo(&p.id, "Segunda")
+        .unwrap();
+    assert_eq!(outra.modelo.as_deref(), Some("qwen3:8b"));
+}
+
+#[test]
+fn sem_modelo_padrao_vale_o_modelo_da_primeira_conversa_criada_no_projeto() {
+    let banco = Banco::em_memoria().unwrap();
+    let p = banco
+        .criar_projeto(&dados_do_projeto("Sem padrão", "", None))
+        .unwrap();
+
+    // Sem padrão e sem conversas: nenhum modelo herdado.
+    assert_eq!(banco.modelo_herdado_pelo_projeto(&p.id).unwrap(), None);
+    let sem_nada = banco
+        .criar_conversa_herdando_modelo(&p.id, "Sem modelo")
+        .unwrap();
+    assert_eq!(sem_nada.modelo, None);
+
+    // A primeira conversa com modelo define o que as seguintes herdam.
+    banco
+        .criar_conversa(&p.id, &conversa_com_modelo("A", Some("gemma3:4b")))
+        .unwrap();
+    banco
+        .criar_conversa(&p.id, &conversa_com_modelo("B", Some("qwen3:8b")))
+        .unwrap();
+    assert_eq!(
+        banco.modelo_herdado_pelo_projeto(&p.id).unwrap().as_deref(),
+        Some("gemma3:4b"),
+        "vale o da primeira conversa, e não o da última"
+    );
+    let herdeira = banco.criar_conversa_herdando_modelo(&p.id, "C").unwrap();
+    assert_eq!(herdeira.modelo.as_deref(), Some("gemma3:4b"));
+
+    // Configurar um padrão passa a mandar, e tirá-lo volta à regra da primeira conversa.
+    banco
+        .atualizar_projeto(
+            &p.id,
+            &dados_do_projeto("Sem padrão", "", Some("llama3.1:8b")),
+        )
+        .unwrap();
+    assert_eq!(
+        banco.modelo_herdado_pelo_projeto(&p.id).unwrap().as_deref(),
+        Some("llama3.1:8b")
+    );
+    banco
+        .atualizar_projeto(&p.id, &dados_do_projeto("Sem padrão", "", None))
+        .unwrap();
+    assert_eq!(
+        banco.modelo_herdado_pelo_projeto(&p.id).unwrap().as_deref(),
+        Some("gemma3:4b")
+    );
+}
+
+#[test]
+fn nao_existe_conversa_sem_projeto_nem_modelo_herdado_de_projeto_inexistente() {
+    let banco = Banco::em_memoria().unwrap();
+
+    assert!(matches!(
+        banco.criar_conversa_herdando_modelo(&novo_id(), "Solta"),
+        Err(ErroBanco::NaoEncontrado)
+    ));
+    assert!(matches!(
+        banco.modelo_herdado_pelo_projeto(&novo_id()),
+        Err(ErroBanco::NaoEncontrado)
+    ));
+    assert!(matches!(
+        banco.criar_conversa(&novo_id(), &conversa("Solta")),
+        Err(ErroBanco::Invalido(_))
+    ));
+}

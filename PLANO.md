@@ -22,8 +22,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E05 | Cliente da API do Ollama (HTTP e streaming) | E03 | concluída |
 | E06 | Ciclo de vida do Ollama | E05 | concluída |
 | E07 | Instalação silenciosa do Ollama | E06 | concluída |
-| E08 | Onboarding e catálogo de modelos | E07 | em revisão |
-| E09 | Projetos | E03, E04 | pendente |
+| E08 | Onboarding e catálogo de modelos | E07 | concluída |
+| E09 | Projetos | E03, E04 | em revisão |
 | E10 | Conversas e chat com streaming | E05, E09 | pendente |
 | E11 | Memória manual (projeto e global) e injeção | E10 | pendente |
 | E12 | Sugestão de memórias sob demanda | E11 | pendente |
@@ -410,6 +410,13 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - Não existe caminho na UI para criar conversa fora de um projeto.
 - Excluir um projeto segue a regra definida na E04 e pede confirmação antes de apagar. **(falha)**
 
+**Como ficou (E09):**
+
+- **Backend:** em `banco`, `criar_projeto` e `atualizar_projeto` validam os dados (nome obrigatório, sem espaços nas pontas e com até 100 caracteres; instruções com até 20.000 caracteres; modelo padrão com nome válido, e em branco vira "sem modelo") e devolvem mensagem amigável em pt-BR (`ErroBanco::Rejeitado`). A lista vem em **ordem alfabética**, sem diferenciar maiúsculas. Comandos do Tauri: `listar_projetos`, `criar_projeto`, `atualizar_projeto`, `resumo_exclusao_projeto`, `excluir_projeto` e `listar_modelos_instalados`.
+- **Modelo herdado:** `modelo_herdado_pelo_projeto` aplica a regra: vale o **modelo padrão do projeto**; sem ele, o modelo da **primeira conversa criada** no projeto que tenha modelo (e não o da última); sem nenhum, a tela pede a escolha. `criar_conversa_herdando_modelo` cria a conversa já com esse modelo, e só existe dentro de um projeto. A E10 usa essas duas funções.
+- **Interface:** a tela principal tem a lateral com os projetos (e o estado do Ollama) e a área central com o projeto aberto, o formulário de novo projeto ou o de edição. O botão "+" e o "Criar o primeiro projeto" abrem o formulário (nome, instruções, modelo padrão escolhido entre os instalados, com a opção "usar o modelo da primeira conversa"). **Não existe "nova conversa" em lugar nenhum fora de um projeto** (um teste confere).
+- **Exclusão:** "Excluir projeto" abre uma confirmação (Radix `AlertDialog`) que mostra quantas conversas, mensagens e memórias serão apagadas junto, avisa que as memórias globais não são afetadas e que a ação não pode ser desfeita. Só dá para confirmar depois de o resumo carregar. Cancelar não apaga nada.
+- **Bibliotecas de UI adotadas** (decididas na E03): Tailwind CSS 4 (`tailwindcss` e `@tailwindcss/vite`), Radix UI (`@radix-ui/react-alert-dialog`) e Zustand (estado dos projetos). `react-markdown` e `rehype-highlight` entram na E10, que mostra markdown.
 ### E10 — Conversas e chat com streaming
 
 **Depende de:** E05, E09.
@@ -585,6 +592,9 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Ferramenta de E2E | Playwright conectado ao WebView2 por CDP. A E15 começa com um teste-piloto, e a alternativa, se falhar, é o `tauri-driver` | 2026-11-08 |
 | Decisões de design do contrato Ollama (E03) | O Ollama só é acessado pelo backend Rust; endereço fixo `127.0.0.1:11434`; `think` não é enviado e o `thinking` do histórico não é reenviado; só `temperature` e `num_ctx` em `options`; sugestões de memória por `/api/chat` com `format` e sem stream. Valem como aprovadas com o merge da E03 | 2026-11-08 |
 | Encerramento garantido do Ollama | Job Object do Windows por processo iniciado, com `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, via `windows-sys` (dependência só do Windows, já presente na árvore do Tauri, com `unsafe` isolado em `job.rs`). Se o app for finalizado à força, o Windows fecha o job e encerra o Ollama e os filhos dele. Se não for possível criar o job, nada é iniciado | 2026-11-08 |
+| Regras de validação do projeto | Nome obrigatório, com até 100 caracteres (contados como caracteres, e não bytes); instruções opcionais, com até 20.000 caracteres; nomes de projeto repetidos são permitidos; lista em ordem alfabética sem diferenciar maiúsculas. Os limites são defesa contra textos absurdos e podem mudar | 2026-11-09 |
+| Modelo herdado pelas conversas | Vale o modelo padrão do projeto; sem ele, o da primeira conversa criada no projeto que tenha modelo; sem nenhum, a tela pede a escolha. A conversa não grava o padrão: a regra é calculada a cada nova conversa | 2026-11-09 |
+| Dependências de interface (E09) | `tailwindcss` e `@tailwindcss/vite` (dev), `@radix-ui/react-alert-dialog` e `zustand`, todas já decididas na E03. Avisado no PR da E09 | 2026-11-09 |
 | Catálogo inicial de modelos | 6 modelos em 3 faixas: leves `llama3.2:3b` (2,0 GB) e `qwen3:4b` (2,5 GB); equilibrados `gemma3:4b` (3,3 GB), `qwen3:8b` (5,2 GB) e `llama3.1:8b` (4,9 GB); potente `gpt-oss:20b` (13,8 GB). Tamanhos conferidos no registro do Ollama em 2026-11-08, e a memória é estimativa | 2026-11-08 |
 | Regra de espaço para modelos | Bloqueia se o espaço livre é menor que o tamanho do que falta baixar. Alerta, com confirmação do usuário, se depois do download sobrariam menos de 5 GB livres. A medição é na unidade da pasta de modelos do Ollama. Espaço ilegível não bloqueia | 2026-11-08 |
 | Download de modelo interrompido | **Retomar.** O Ollama guarda o que já baixou e retoma do ponto onde parou, e o modelo só aparece na lista quando está completo. O Memoteca não apaga nada na pasta do Ollama. A mensagem amigável oferece "Continuar o download" | 2026-11-08 |

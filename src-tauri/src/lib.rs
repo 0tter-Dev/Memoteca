@@ -5,7 +5,7 @@ pub mod ollama;
 
 use std::sync::{Arc, Mutex};
 
-use banco::Banco;
+use banco::{Banco, DadosProjeto, ErroBanco, Projeto, ResumoExclusaoProjeto};
 use instalador::{InstaladorDoOllama, ProgressoInstalacao, ResultadoInstalacao};
 use modelos::{
     AvaliacaoParaInterface, Catalogo, ProgressoDoModelo, ResultadoDoModelo, ServicoDeModelos,
@@ -108,6 +108,63 @@ fn cancelar_instalacao_ollama(estado: tauri::State<'_, InstalacaoDoApp>) {
     {
         cancelamento.cancel();
     }
+}
+
+/// Roda uma operação no banco, devolvendo só a mensagem amigável se falhar. O texto técnico
+/// vai para o log de erro padrão.
+fn com_banco<T>(
+    estado: &EstadoBanco,
+    operacao: impl FnOnce(&Banco) -> Result<T, ErroBanco>,
+) -> Result<T, String> {
+    let banco = estado.0.as_ref().map_err(Clone::clone)?;
+    let banco = banco
+        .lock()
+        .map_err(|_| ErroBanco::Interno("banco em uso".into()).mensagem_amigavel())?;
+    operacao(&banco).map_err(|erro| {
+        eprintln!("operação no banco falhou: {erro}");
+        erro.mensagem_amigavel()
+    })
+}
+
+/// Projetos, em ordem alfabética.
+#[tauri::command]
+fn listar_projetos(estado: tauri::State<'_, EstadoBanco>) -> Result<Vec<Projeto>, String> {
+    com_banco(&estado, Banco::listar_projetos)
+}
+
+/// Cria um projeto. O nome é obrigatório.
+#[tauri::command]
+fn criar_projeto(
+    dados: DadosProjeto,
+    estado: tauri::State<'_, EstadoBanco>,
+) -> Result<Projeto, String> {
+    com_banco(&estado, |banco| banco.criar_projeto(&dados))
+}
+
+/// Edita nome, instruções e modelo padrão de um projeto.
+#[tauri::command]
+fn atualizar_projeto(
+    id: String,
+    dados: DadosProjeto,
+    estado: tauri::State<'_, EstadoBanco>,
+) -> Result<Projeto, String> {
+    com_banco(&estado, |banco| banco.atualizar_projeto(&id, &dados))
+}
+
+/// O que será apagado junto com o projeto, para a tela de confirmação.
+#[tauri::command]
+fn resumo_exclusao_projeto(
+    id: String,
+    estado: tauri::State<'_, EstadoBanco>,
+) -> Result<ResumoExclusaoProjeto, String> {
+    com_banco(&estado, |banco| banco.resumo_exclusao_projeto(&id))
+}
+
+/// Exclui o projeto e, em cascata, as conversas, mensagens e memórias dele. A tela só chama
+/// isto depois de o usuário confirmar.
+#[tauri::command]
+fn excluir_projeto(id: String, estado: tauri::State<'_, EstadoBanco>) -> Result<(), String> {
+    com_banco(&estado, |banco| banco.excluir_projeto(&id))
 }
 
 /// Chave de configuração que marca o onboarding como concluído.
@@ -239,6 +296,18 @@ async fn baixar_modelo(
     }
 }
 
+/// Nomes dos modelos instalados, para escolher o modelo padrão de um projeto.
+#[tauri::command]
+async fn listar_modelos_instalados(
+    estado: tauri::State<'_, ModelosDoApp>,
+) -> Result<Vec<String>, String> {
+    let servico = estado.servico.as_ref().map_err(Clone::clone)?;
+    servico.listar_instalados().await.map_err(|erro| {
+        eprintln!("não foi possível listar os modelos instalados: {erro}");
+        erro.mensagem_amigavel()
+    })
+}
+
 /// Cancela o download de modelo em andamento. Não faz nada se não houver nenhum.
 #[tauri::command]
 fn cancelar_download_modelo(estado: tauri::State<'_, ModelosDoApp>) {
@@ -332,7 +401,13 @@ pub fn run() {
             catalogo_de_modelos,
             avaliar_espaco_do_modelo,
             baixar_modelo,
-            cancelar_download_modelo
+            cancelar_download_modelo,
+            listar_projetos,
+            criar_projeto,
+            atualizar_projeto,
+            resumo_exclusao_projeto,
+            excluir_projeto,
+            listar_modelos_instalados
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o aplicativo Memoteca")

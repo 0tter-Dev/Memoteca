@@ -148,6 +148,17 @@ impl ServicoDeModelos {
         &self.catalogo
     }
 
+    /// Nomes dos modelos instalados no Ollama, como ele os lista.
+    pub async fn listar_instalados(&self) -> Result<Vec<String>, ErroOllama> {
+        Ok(self
+            .cliente
+            .listar_modelos()
+            .await?
+            .into_iter()
+            .map(|modelo| modelo.nome)
+            .collect())
+    }
+
     fn espaco_livre(&self) -> Option<u64> {
         self.pasta_de_modelos
             .as_ref()
