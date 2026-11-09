@@ -22,11 +22,18 @@ pub struct Migracao {
 
 /// Migrações do app, em ordem. Para mudar o esquema, acrescente uma nova no fim. Nunca
 /// edite uma migração que já foi publicada.
-pub const MIGRACOES: &[Migracao] = &[Migracao {
-    versao: 1,
-    nome: "inicial",
-    sql: include_str!("migracoes/0001_inicial.sql"),
-}];
+pub const MIGRACOES: &[Migracao] = &[
+    Migracao {
+        versao: 1,
+        nome: "inicial",
+        sql: include_str!("migracoes/0001_inicial.sql"),
+    },
+    Migracao {
+        versao: 2,
+        nome: "estado da mensagem",
+        sql: include_str!("migracoes/0002_estado_da_mensagem.sql"),
+    },
+];
 
 /// Maior versão que este app conhece.
 pub fn versao_suportada(migracoes: &[Migracao]) -> u32 {

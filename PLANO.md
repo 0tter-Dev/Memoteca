@@ -23,8 +23,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E06 | Ciclo de vida do Ollama | E05 | concluída |
 | E07 | Instalação silenciosa do Ollama | E06 | concluída |
 | E08 | Onboarding e catálogo de modelos | E07 | concluída |
-| E09 | Projetos | E03, E04 | em revisão |
-| E10 | Conversas e chat com streaming | E05, E09 | pendente |
+| E09 | Projetos | E03, E04 | concluída |
+| E10 | Conversas e chat com streaming | E05, E09 | em revisão |
 | E11 | Memória manual (projeto e global) e injeção | E10 | pendente |
 | E12 | Sugestão de memórias sob demanda | E11 | pendente |
 | E13 | Exportar e importar | E04, E11 | pendente |
@@ -442,7 +442,20 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - Enviar com o Ollama fora do ar mostra mensagem amigável e **não perde** a mensagem do usuário. **(falha)**
 - Só uma conversa fica ativa por vez.
 
-**Decisões a tomar:** tamanho do truncamento do título, e comportamento de excluir conversa e editar mensagem, que o conceito não cobre.
+**Decisões a tomar:** tamanho do truncamento do título, e comportamento de excluir conversa e editar mensagem, que o conceito não cobre. _Decididas com o usuário, ver o Registro de decisões._
+
+**Como ficou (E10):**
+
+- **Backend:** módulo `conversas` (`titulo`, `contexto`, `geracao`, `controle`). `registrar_mensagem_do_usuario` grava a mensagem **antes** de qualquer chamada ao Ollama, então ela nunca se perde. `gerar` roda em dois modos: **responder** a última mensagem do usuário (a resposta vira mensagem nova) e **regenerar** (a resposta nova **substitui** a antiga, no mesmo ID e na mesma posição). `ControleDeGeracao` garante **uma geração por vez**. Comandos do Tauri: `listar_conversas`, `criar_conversa`, `listar_mensagens`, `atualizar_conversa`, `resumo_exclusao_conversa`, `excluir_conversa`, `enviar_mensagem`, `gerar_resposta_pendente` ("tentar de novo"), `regenerar_resposta`, `cancelar_geracao` e `detalhes_do_modelo`.
+- **Contexto de cada envio:** uma única mensagem `system` com as instruções do projeto, **sempre a primeira e em todo envio** (e omitida se as instruções estão em branco), seguida do histórico só com `role` e `content`. O `thinking` de respostas anteriores nunca é reenviado. As memórias entram nessa mesma mensagem a partir da E11.
+- **Streaming:** o raciocínio e o conteúdo chegam à tela separados, na ordem. O botão **Parar** cancela, fecha a conexão e guarda o que já chegou.
+- **Resposta guardada pela metade:** migração 2 (`estado` da mensagem: `completa` ou `interrompida`). Se o usuário cancelar ou a conexão cair com texto já recebido, esse texto é guardado como `interrompida` (a tela mostra "Resposta interrompida." e oferece gerar de novo). Se a falha acontece ao **regenerar**, a resposta antiga é mantida. Cancelar sem nenhum texto não grava nada.
+- **Parâmetros por conversa:** cada conversa guarda o próprio modelo, `temperature`, `num_ctx` e `keep_alive`. Uma conversa nova herda o modelo do projeto (regra da E09) e nasce com temperatura 0,7, contexto 8192 e 5 minutos na memória. O `num_ctx` enviado é limitado à janela máxima do modelo (`/api/show`). Limites validados: temperatura de 0 a 2, contexto de 512 a 4.194.304, e `keep_alive` `-1`, `0` ou número com `s`, `m` ou `h`.
+- **Título:** a primeira mensagem dá o título (primeira linha, até 40 caracteres, cortando no fim de palavra e com "…"). Um título que o usuário editou nunca é sobrescrito.
+- **Falhas:** Ollama fora do ar, modelo removido ou sem suporte a conversa, resposta vazia e JSON inválido viram mensagem amigável **dentro da conversa**, com "Tentar de novo". A mensagem do usuário continua lá. Antes de gerar, o comando garante que o Ollama está no ar (reinicia o que o app iniciou, se caiu).
+- **Interface:** a lateral mostra as conversas do projeto aberto (da mais recente para a mais antiga) e o "+ Nova conversa", que só existe **dentro de um projeto**. A conversa tem título editável, "Modelo e parâmetros", a lista de mensagens (markdown com tabelas, listas, código realçado), o bloco "Raciocínio" **recolhido por padrão e só quando o modelo o emitiu**, "Gerar de novo" na última resposta, "Excluir conversa" com confirmação (diz quantas mensagens somem) e o campo de envio (Enter envia, Shift+Enter quebra a linha). Durante uma geração, a lateral fica travada: **só uma conversa ativa**, e ela não muda no meio de uma resposta.
+- **Markdown seguro:** `react-markdown` com `remark-gfm` e `rehype-highlight`, sem HTML cru. Links e imagens aparecem como texto, sem nada clicável nem carregado.
+- **Limitação conhecida:** durante o streaming, a resposta inteira é refeita em markdown a cada pedaço. Respostas muito longas (na validação real, uma de ~150 mil caracteres) deixam a tela lenta até terminar ou ser cancelada. Respostas normais (alguns milhares de caracteres) não sofrem com isso. Fica como ponto de atenção para a revisão.
 
 ### E11 — Memória manual (projeto e global) e injeção
 
@@ -592,6 +605,12 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Ferramenta de E2E | Playwright conectado ao WebView2 por CDP. A E15 começa com um teste-piloto, e a alternativa, se falhar, é o `tauri-driver` | 2026-11-08 |
 | Decisões de design do contrato Ollama (E03) | O Ollama só é acessado pelo backend Rust; endereço fixo `127.0.0.1:11434`; `think` não é enviado e o `thinking` do histórico não é reenviado; só `temperature` e `num_ctx` em `options`; sugestões de memória por `/api/chat` com `format` e sem stream. Valem como aprovadas com o merge da E03 | 2026-11-08 |
 | Encerramento garantido do Ollama | Job Object do Windows por processo iniciado, com `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, via `windows-sys` (dependência só do Windows, já presente na árvore do Tauri, com `unsafe` isolado em `job.rs`). Se o app for finalizado à força, o Windows fecha o job e encerra o Ollama e os filhos dele. Se não for possível criar o job, nada é iniciado | 2026-11-08 |
+| Título automático da conversa | Primeira linha da primeira mensagem do usuário, até 40 caracteres, cortando no fim de palavra e acrescentando "…" se cortou. O título editado pelo usuário nunca é sobrescrito | 2026-11-09 |
+| Excluir conversa e editar mensagem | Excluir conversa: sim, com confirmação que diz quantas mensagens somem (exclusão física em cascata, como no projeto). Editar mensagem: não, no MVP. Para outra resposta existe regenerar, e mensagens já geradas nunca mudam | 2026-11-09 |
+| Links nas respostas do modelo | Aparecem como texto, não clicáveis, e imagens não carregam. Não usa o plugin `opener` nem permissão nova no Tauri. Se for preciso abrir links no futuro, é uma mudança de escopo a aprovar | 2026-11-09 |
+| Parâmetros padrão da conversa | Temperatura 0,7, contexto (`num_ctx`) 8192 (limitado à janela do modelo) e `keep_alive` de 5 minutos, gravados em cada conversa nova | 2026-11-09 |
+| Resposta guardada pela metade | Se o usuário cancela ou a conexão cai com texto já recebido, o texto é guardado como mensagem `interrompida`. Ao regenerar, uma falha mantém a resposta antiga. Migração 2 do banco | 2026-11-09 |
+| Dependências do chat (E10) | `react-markdown`, `remark-gfm` e `rehype-highlight`, todas já decididas na E03. O realce de código usa cores próprias (CSS), sem importar tema do `highlight.js`. Avisado no PR da E10 | 2026-11-09 |
 | Regras de validação do projeto | Nome obrigatório, com até 100 caracteres (contados como caracteres, e não bytes); instruções opcionais, com até 20.000 caracteres; nomes de projeto repetidos são permitidos; lista em ordem alfabética sem diferenciar maiúsculas. Os limites são defesa contra textos absurdos e podem mudar | 2026-11-09 |
 | Modelo herdado pelas conversas | Vale o modelo padrão do projeto; sem ele, o da primeira conversa criada no projeto que tenha modelo; sem nenhum, a tela pede a escolha. A conversa não grava o padrão: a regra é calculada a cada nova conversa | 2026-11-09 |
 | Dependências de interface (E09) | `tailwindcss` e `@tailwindcss/vite` (dev), `@radix-ui/react-alert-dialog` e `zustand`, todas já decididas na E03. Avisado no PR da E09 | 2026-11-09 |
@@ -612,9 +631,6 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Decisão | Etapa que a resolve |
 | --- | --- |
 | Confirmar a versão mínima do Ollama (0.30.0) contra um Ollama real dessa versão. Na E06 só havia a 0.32.9 para testar | E15 (checklist manual) |
-| Comportamento de links nas respostas do modelo (abrir no navegador exige o plugin `opener` e uma permissão nova; por ora o app não abre links) | E10 |
-| Tamanho do truncamento do título | E10 |
-| Excluir conversa e editar mensagem | E10 |
 | Ordem de montagem do contexto e limite do `num_ctx` | E11 |
 | Modelo e escopo das sugestões de memória | E12 |
 | Formato do export e política de importação | E13 |
@@ -701,7 +717,7 @@ Regras:
 - **`think` não é enviado.** O modelo usa o padrão dele, e a UI mostra `thinking` apenas se o modelo o emitir. É isso que dispensa um toggle por conversa.
 - **`options`:** só `temperature` e `num_ctx`.
 - **`keep_alive`:** no nível superior. Opções na tela: `5m` (padrão do Ollama), `30m`, `1h`, `24h`, "manter carregado" (número `-1`) e "descarregar logo" (número `0`).
-- **Cancelar** é fechar a conexão, e o cliente descarta qualquer pedaço que chegar depois. **(a validar na E05: que o Ollama interrompe a geração quando o cliente desconecta.)**
+- **Cancelar** é fechar a conexão, e o cliente descarta qualquer pedaço que chegar depois. **Confirmado na E10 com o Ollama 0.32.9:** ao desconectar, o Ollama interrompe a geração (o processo `llama-server` saiu de ~90% de GPU para ocioso em menos de 2 s depois do "Parar").
 
 Stream de resposta:
 

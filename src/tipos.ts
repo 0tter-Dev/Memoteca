@@ -82,3 +82,66 @@ export function formatarTamanho(bytes: number): string {
   const unidade = bytes >= gigabyte ? "GB" : "MB";
   return `${valor.toFixed(1).replace(".", ",")} ${unidade}`;
 }
+
+/** Conversa, como o backend devolve. Cada conversa guarda o próprio modelo e parâmetros. */
+export interface Conversa {
+  id: string;
+  projetoId: string;
+  titulo: string;
+  modelo: string | null;
+  temperature: number | null;
+  numCtx: number | null;
+  keepAlive: string | null;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+/** Campos editáveis de uma conversa. */
+export interface DadosConversa {
+  titulo: string;
+  modelo: string | null;
+  temperature: number | null;
+  numCtx: number | null;
+  keepAlive: string | null;
+}
+
+export interface Mensagem {
+  id: string;
+  conversaId: string;
+  posicao: number;
+  papel: "user" | "assistant";
+  conteudo: string;
+  /** Raciocínio (`thinking`) do modelo, quando ele emitiu algum. */
+  raciocinio: string | null;
+  /** `interrompida`: a resposta foi guardada pela metade. */
+  estado: "completa" | "interrompida";
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+/** Pedaço da resposta enviado durante a geração (canal dos comandos de chat). */
+export type EventoDeGeracao =
+  { tipo: "raciocinio"; texto: string } | { tipo: "conteudo"; texto: string };
+
+/** Como a geração terminou (resultado dos comandos de chat). */
+export interface ResultadoDaGeracao {
+  estado: "concluida" | "cancelada";
+  mensagem: Mensagem | null;
+  /** O modelo parou por limite de tamanho. */
+  cortada: boolean;
+}
+
+/** Falha da geração (rejeição dos comandos de chat). */
+export interface FalhaDaGeracao {
+  mensagem: string;
+  mensagemParcial: Mensagem | null;
+}
+
+export interface DetalhesDoModelo {
+  janelaDeContexto: number | null;
+  suportaRaciocinio: boolean;
+}
+
+/** Limite de tamanho de uma mensagem, o mesmo que o backend aplica. */
+export const MENSAGEM_MAXIMA = 100_000;
+export const TITULO_DA_CONVERSA_MAXIMO = 100;

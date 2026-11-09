@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -72,7 +72,8 @@ describe("App", () => {
     expect(invoke).toHaveBeenCalledWith("estado_do_banco");
     expect(invoke).toHaveBeenCalledWith("onboarding_concluido");
     expect(invoke).toHaveBeenCalledWith("preparar_ollama");
-    expect(invoke).toHaveBeenCalledWith("listar_projetos");
+    // A lista de projetos é pedida num efeito, depois de a tela aparecer.
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("listar_projetos"));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 

@@ -27,3 +27,151 @@ body {
 .aviso {
   color: light-dark(#b54708, #fec84b);
 }
+
+/* ----- Markdown das respostas ----- */
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown pre,
+.markdown table,
+.markdown blockquote {
+  margin: 0.6rem 0;
+}
+
+.markdown ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+
+.markdown ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 1rem 0 0.4rem;
+  font-weight: 600;
+}
+
+.markdown h1 {
+  font-size: 1.25rem;
+}
+
+.markdown h2 {
+  font-size: 1.15rem;
+}
+
+.markdown h3,
+.markdown h4 {
+  font-size: 1.05rem;
+}
+
+.markdown blockquote {
+  border-left: 3px solid light-dark(#c4c4c4, #525252);
+  padding-left: 0.75rem;
+  color: light-dark(#525252, #a3a3a3);
+}
+
+.markdown code {
+  border-radius: 0.25rem;
+  background: light-dark(#eeeeee, #2a2a2a);
+  padding: 0.1rem 0.3rem;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.markdown pre {
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background: light-dark(#f4f4f4, #1e1e1e);
+  padding: 0.75rem;
+}
+
+.markdown pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown table {
+  border-collapse: collapse;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid light-dark(#c4c4c4, #525252);
+  padding: 0.25rem 0.5rem;
+}
+
+.markdown input[type="checkbox"] {
+  margin-right: 0.4rem;
+}
+
+/* Links e imagens aparecem como texto, sem abrir nada. */
+.link-como-texto {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+/* Realce de código (highlight.js), com cores para o tema claro e o escuro. */
+.hljs-comment,
+.hljs-quote {
+  color: light-dark(#6a737d, #8b949e);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-doctag,
+.hljs-meta .hljs-keyword {
+  color: light-dark(#d73a49, #ff7b72);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-meta .hljs-string {
+  color: light-dark(#032f62, #a5d6ff);
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable {
+  color: light-dark(#005cc5, #79c0ff);
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-section,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: light-dark(#6f42c1, #d2a8ff);
+}
+
+.hljs-type,
+.hljs-built_in,
+.hljs-title.class_ {
+  color: light-dark(#e36209, #ffa657);
+}
+
+.hljs-deletion {
+  color: light-dark(#b31d28, #ffa198);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
+}

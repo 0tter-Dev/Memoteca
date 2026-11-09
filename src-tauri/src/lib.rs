@@ -1,18 +1,25 @@
 pub mod banco;
+pub mod conversas;
 pub mod instalador;
 pub mod modelos;
 pub mod ollama;
 
 use std::sync::{Arc, Mutex};
 
-use banco::{Banco, DadosProjeto, ErroBanco, Projeto, ResumoExclusaoProjeto};
+use banco::{
+    Banco, Conversa, DadosConversa, DadosProjeto, ErroBanco, Mensagem, Projeto,
+    ResumoExclusaoProjeto,
+};
+use conversas::{
+    ControleDeGeracao, DesfechoDaGeracao, ModoDeGeracao, gerar, registrar_mensagem_do_usuario,
+};
 use instalador::{InstaladorDoOllama, ProgressoInstalacao, ResultadoInstalacao};
 use modelos::{
     AvaliacaoParaInterface, Catalogo, ProgressoDoModelo, ResultadoDoModelo, ServicoDeModelos,
 };
-use ollama::ClienteOllama;
 use ollama::ciclo::{EstadoParaInterface, GerenciadorOllama};
 use ollama::instalacao::DetectorReal;
+use ollama::{ClienteOllama, PedacoChat};
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{Manager, RunEvent};
@@ -165,6 +172,285 @@ fn resumo_exclusao_projeto(
 #[tauri::command]
 fn excluir_projeto(id: String, estado: tauri::State<'_, EstadoBanco>) -> Result<(), String> {
     com_banco(&estado, |banco| banco.excluir_projeto(&id))
+}
+
+// ----- Conversas e chat -----
+
+/// Controle de "uma geração por vez", compartilhado pelos comandos de conversa.
+struct ConversasDoApp {
+    controle: ControleDeGeracao,
+    /// Cliente do Ollama local. Em caso de falha ao criar guarda a mensagem amigável.
+    cliente: Result<ClienteOllama, String>,
+}
+
+/// Um pedaço da resposta, enviado à tela na ordem em que chega do modelo.
+#[derive(Serialize)]
+#[serde(tag = "tipo", rename_all = "snake_case")]
+enum EventoDeGeracao {
+    Raciocinio { texto: String },
+    Conteudo { texto: String },
+}
+
+/// Como uma geração terminou, para a tela.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ResultadoDaGeracaoParaInterface {
+    /// `concluida` ou `cancelada`.
+    estado: &'static str,
+    /// A resposta gravada (inteira ou interrompida), se houver.
+    mensagem: Option<Mensagem>,
+    /// O modelo parou por limite de tamanho.
+    cortada: bool,
+}
+
+/// Falha da geração. A mensagem do usuário continua gravada.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FalhaDaGeracaoParaInterface {
+    mensagem: String,
+    /// A resposta que chegou pela metade e foi guardada como interrompida, se houver.
+    mensagem_parcial: Option<Box<Mensagem>>,
+}
+
+impl FalhaDaGeracaoParaInterface {
+    fn simples(mensagem: impl Into<String>) -> Self {
+        Self {
+            mensagem: mensagem.into(),
+            mensagem_parcial: None,
+        }
+    }
+}
+
+/// Grava a mensagem do usuário (se houver) e gera a resposta, enviando os pedaços pelo canal.
+/// A mensagem do usuário é gravada **antes** de qualquer chamada ao Ollama.
+async fn executar_geracao(
+    banco: &EstadoBanco,
+    conversas: &ConversasDoApp,
+    ollama_do_app: &OllamaDoApp,
+    conversa_id: &str,
+    texto: Option<&str>,
+    modo: ModoDeGeracao,
+    canal: &Channel<EventoDeGeracao>,
+) -> Result<ResultadoDaGeracaoParaInterface, FalhaDaGeracaoParaInterface> {
+    let banco = banco
+        .0
+        .as_ref()
+        .map_err(|mensagem| FalhaDaGeracaoParaInterface::simples(mensagem.clone()))?;
+    let vaga = conversas
+        .controle
+        .iniciar()
+        .map_err(|erro| FalhaDaGeracaoParaInterface::simples(erro.mensagem_amigavel()))?;
+
+    if let Some(texto) = texto {
+        registrar_mensagem_do_usuario(banco, conversa_id, texto).map_err(|erro| {
+            eprintln!("não foi possível gravar a mensagem: {erro}");
+            FalhaDaGeracaoParaInterface::simples(erro.mensagem_amigavel())
+        })?;
+    }
+
+    // Garante que o Ollama está no ar. Se ele caiu, é aqui que volta.
+    let gerenciador = ollama_do_app
+        .0
+        .as_ref()
+        .map_err(|mensagem| FalhaDaGeracaoParaInterface::simples(mensagem.clone()))?;
+    let situacao = gerenciador.lock().await.preparar().await;
+    if !matches!(situacao, ollama::ciclo::EstadoOllama::EmExecucao(_)) {
+        let mensagem = situacao
+            .para_interface()
+            .mensagem
+            .unwrap_or_else(|| "O Ollama não está disponível. Tente de novo.".to_owned());
+        return Err(FalhaDaGeracaoParaInterface::simples(mensagem));
+    }
+
+    let cliente = conversas
+        .cliente
+        .as_ref()
+        .map_err(|mensagem| FalhaDaGeracaoParaInterface::simples(mensagem.clone()))?;
+    let resultado = gerar(
+        banco,
+        cliente,
+        conversa_id,
+        modo,
+        vaga.cancelamento(),
+        &mut |pedaco| {
+            let evento = match pedaco {
+                PedacoChat::Raciocinio(texto) => EventoDeGeracao::Raciocinio { texto },
+                PedacoChat::Conteudo(texto) => EventoDeGeracao::Conteudo { texto },
+            };
+            let _ = canal.send(evento);
+        },
+    )
+    .await;
+
+    match resultado {
+        Ok(DesfechoDaGeracao::Concluida { mensagem, cortada }) => {
+            Ok(ResultadoDaGeracaoParaInterface {
+                estado: "concluida",
+                mensagem: Some(mensagem),
+                cortada,
+            })
+        }
+        Ok(DesfechoDaGeracao::Cancelada { mensagem }) => Ok(ResultadoDaGeracaoParaInterface {
+            estado: "cancelada",
+            mensagem,
+            cortada: false,
+        }),
+        Err(falha) => {
+            eprintln!("a geração da resposta falhou: {}", falha.erro);
+            Err(FalhaDaGeracaoParaInterface {
+                mensagem: falha.erro.mensagem_amigavel(),
+                mensagem_parcial: falha.mensagem_parcial,
+            })
+        }
+    }
+}
+
+/// Conversas de um projeto, da mais recente para a mais antiga.
+#[tauri::command]
+fn listar_conversas(
+    projeto_id: String,
+    estado: tauri::State<'_, EstadoBanco>,
+) -> Result<Vec<Conversa>, String> {
+    com_banco(&estado, |banco| {
+        banco.listar_conversas_do_projeto(&projeto_id)
+    })
+}
+
+/// Cria uma conversa nova dentro do projeto, com o modelo herdado e os valores padrão.
+#[tauri::command]
+fn criar_conversa(
+    projeto_id: String,
+    estado: tauri::State<'_, EstadoBanco>,
+) -> Result<Conversa, String> {
+    com_banco(&estado, |banco| banco.criar_conversa_nova(&projeto_id))
+}
+
+/// Mensagens da conversa, na ordem em que foram trocadas.
+#[tauri::command]
+fn listar_mensagens(
+    conversa_id: String,
+    estado: tauri::State<'_, EstadoBanco>,
+) -> Result<Vec<Mensagem>, String> {
+    com_banco(&estado, |banco| banco.listar_mensagens(&conversa_id))
+}
+
+/// Edita título, modelo e parâmetros de uma conversa.
+#[tauri::command]
+fn atualizar_conversa(
+    id: String,
+    dados: DadosConversa,
+    estado: tauri::State<'_, EstadoBanco>,
+) -> Result<Conversa, String> {
+    com_banco(&estado, |banco| banco.atualizar_conversa(&id, &dados))
+}
+
+/// Quantas mensagens serão apagadas junto com a conversa.
+#[tauri::command]
+fn resumo_exclusao_conversa(
+    id: String,
+    estado: tauri::State<'_, EstadoBanco>,
+) -> Result<u64, String> {
+    com_banco(&estado, |banco| banco.contar_mensagens(&id))
+}
+
+/// Exclui a conversa e as mensagens dela. A tela só chama isto depois de confirmar.
+#[tauri::command]
+fn excluir_conversa(id: String, estado: tauri::State<'_, EstadoBanco>) -> Result<(), String> {
+    com_banco(&estado, |banco| banco.excluir_conversa(&id))
+}
+
+/// Grava a mensagem do usuário e gera a resposta, com streaming pelo `canal`.
+#[tauri::command]
+async fn enviar_mensagem(
+    conversa_id: String,
+    texto: String,
+    canal: Channel<EventoDeGeracao>,
+    banco: tauri::State<'_, EstadoBanco>,
+    conversas: tauri::State<'_, ConversasDoApp>,
+    ollama_do_app: tauri::State<'_, OllamaDoApp>,
+) -> Result<ResultadoDaGeracaoParaInterface, FalhaDaGeracaoParaInterface> {
+    executar_geracao(
+        &banco,
+        &conversas,
+        &ollama_do_app,
+        &conversa_id,
+        Some(&texto),
+        ModoDeGeracao::ResponderUltimaMensagem,
+        &canal,
+    )
+    .await
+}
+
+/// "Tentar de novo": responde à última mensagem do usuário, que ficou sem resposta.
+#[tauri::command]
+async fn gerar_resposta_pendente(
+    conversa_id: String,
+    canal: Channel<EventoDeGeracao>,
+    banco: tauri::State<'_, EstadoBanco>,
+    conversas: tauri::State<'_, ConversasDoApp>,
+    ollama_do_app: tauri::State<'_, OllamaDoApp>,
+) -> Result<ResultadoDaGeracaoParaInterface, FalhaDaGeracaoParaInterface> {
+    executar_geracao(
+        &banco,
+        &conversas,
+        &ollama_do_app,
+        &conversa_id,
+        None,
+        ModoDeGeracao::ResponderUltimaMensagem,
+        &canal,
+    )
+    .await
+}
+
+/// Gera de novo a última resposta, que é substituída pela nova.
+#[tauri::command]
+async fn regenerar_resposta(
+    conversa_id: String,
+    canal: Channel<EventoDeGeracao>,
+    banco: tauri::State<'_, EstadoBanco>,
+    conversas: tauri::State<'_, ConversasDoApp>,
+    ollama_do_app: tauri::State<'_, OllamaDoApp>,
+) -> Result<ResultadoDaGeracaoParaInterface, FalhaDaGeracaoParaInterface> {
+    executar_geracao(
+        &banco,
+        &conversas,
+        &ollama_do_app,
+        &conversa_id,
+        None,
+        ModoDeGeracao::RegenerarUltimaResposta,
+        &canal,
+    )
+    .await
+}
+
+/// Cancela a geração em andamento. Não faz nada se não houver nenhuma.
+#[tauri::command]
+fn cancelar_geracao(conversas: tauri::State<'_, ConversasDoApp>) {
+    conversas.controle.cancelar();
+}
+
+/// Janela de contexto e suporte a raciocínio de um modelo, para a tela de parâmetros.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DetalhesDoModeloParaInterface {
+    janela_de_contexto: Option<u64>,
+    suporta_raciocinio: bool,
+}
+
+#[tauri::command]
+async fn detalhes_do_modelo(
+    nome: String,
+    modelos: tauri::State<'_, ModelosDoApp>,
+) -> Result<DetalhesDoModeloParaInterface, String> {
+    let servico = modelos.servico.as_ref().map_err(Clone::clone)?;
+    let detalhes = servico
+        .detalhes(&nome)
+        .await
+        .map_err(|erro| erro.mensagem_amigavel())?;
+    Ok(DetalhesDoModeloParaInterface {
+        janela_de_contexto: detalhes.janela_de_contexto,
+        suporta_raciocinio: detalhes.suporta_raciocinio(),
+    })
 }
 
 /// Chave de configuração que marca o onboarding como concluído.
@@ -385,6 +671,10 @@ pub fn run() {
                         catalogo,
                     ))
                 });
+            app.manage(ConversasDoApp {
+                controle: ControleDeGeracao::default(),
+                cliente: ClienteOllama::novo().map_err(|erro| erro.mensagem_amigavel()),
+            });
             app.manage(ModelosDoApp {
                 servico,
                 em_andamento: Mutex::new(None),
@@ -407,7 +697,18 @@ pub fn run() {
             atualizar_projeto,
             resumo_exclusao_projeto,
             excluir_projeto,
-            listar_modelos_instalados
+            listar_modelos_instalados,
+            listar_conversas,
+            criar_conversa,
+            listar_mensagens,
+            atualizar_conversa,
+            resumo_exclusao_conversa,
+            excluir_conversa,
+            enviar_mensagem,
+            gerar_resposta_pendente,
+            regenerar_resposta,
+            cancelar_geracao,
+            detalhes_do_modelo
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o aplicativo Memoteca")

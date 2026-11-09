@@ -148,6 +148,11 @@ impl ServicoDeModelos {
         &self.catalogo
     }
 
+    /// Janela de contexto e suporte a raciocínio de um modelo instalado.
+    pub async fn detalhes(&self, nome: &str) -> Result<crate::ollama::DetalhesModelo, ErroOllama> {
+        self.cliente.detalhes_do_modelo(nome).await
+    }
+
     /// Nomes dos modelos instalados no Ollama, como ele os lista.
     pub async fn listar_instalados(&self) -> Result<Vec<String>, ErroOllama> {
         Ok(self
