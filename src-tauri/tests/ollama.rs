@@ -786,7 +786,7 @@ async fn r10_modelo_inexistente_no_download_da_erro_amigavel_e_nao_o_erro_cru() 
         Resposta::erro(404, "model 'xyz' not found"),
     );
     let (por_status, _) = baixar(&cliente(&servidor.url()), "xyz").await;
-    assert_eq!(por_status.unwrap_err(), ErroOllama::ModeloNaoEncontrado);
+    assert_eq!(por_status.unwrap_err(), ErroOllama::ModeloInexistente);
 
     servidor.rota(
         "POST",
@@ -798,8 +798,17 @@ async fn r10_modelo_inexistente_no_download_da_erro_amigavel_e_nao_o_erro_cru() 
     );
     let (por_linha, _) = baixar(&cliente(&servidor.url()), "xyz").await;
     let erro = por_linha.unwrap_err();
-    assert!(matches!(erro, ErroOllama::ErroDoOllama(_)));
+    assert_eq!(erro, ErroOllama::ModeloInexistente);
     assert!(!erro.mensagem_amigavel().contains("manifest"));
+
+    // Outras linhas de erro continuam sendo erros genéricos do Ollama.
+    servidor.rota(
+        "POST",
+        "/api/pull",
+        Resposta::linhas(&[r#"{"error":"write blob: no space left on device"}"#]),
+    );
+    let (outro, _) = baixar(&cliente(&servidor.url()), "xyz").await;
+    assert!(matches!(outro.unwrap_err(), ErroOllama::ErroDoOllama(_)));
 }
 
 #[tokio::test]

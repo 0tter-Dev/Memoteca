@@ -240,15 +240,17 @@ impl GerenciadorOllama {
         }
 
         let limite = Instant::now() + self.config.espera_pela_inicializacao;
+        // O Ollama recém-iniciado abre a porta alguns segundos antes de responder (com a
+        // pasta de modelos vazia isso passa de 3 s, medido com a 0.32.9). Nesse intervalo a
+        // resposta parece "outro programa". Por isso, enquanto o processo que o próprio app
+        // iniciou está vivo, `PortaOcupada` é tratada como "ainda subindo", e só vale se o
+        // processo sair ou se o prazo acabar com a porta ainda ocupada.
+        let mut porta_ocupada_na_ultima_vez: bool;
         loop {
             match self.cliente.verificar().await {
                 Ok(info) => return self.descrever(info).await,
-                Err(ErroOllama::OllamaForaDoAr) => {}
-                Err(ErroOllama::PortaOcupada) => {
-                    // Alguém ocupou a porta no meio do caminho: desfaz o que iniciamos.
-                    self.encerrar_se_iniciado_pelo_app();
-                    return EstadoOllama::PortaOcupada;
-                }
+                Err(ErroOllama::OllamaForaDoAr) => porta_ocupada_na_ultima_vez = false,
+                Err(ErroOllama::PortaOcupada) => porta_ocupada_na_ultima_vez = true,
                 Err(outro) => {
                     self.encerrar_se_iniciado_pelo_app();
                     return EstadoOllama::Indisponivel(outro);
@@ -259,14 +261,24 @@ impl GerenciadorOllama {
                 && let Ok(Some(codigo)) = filho.saiu()
             {
                 self.filho = None;
-                return EstadoOllama::Indisponivel(ErroOllama::FalhaAoIniciar(format!(
-                    "o processo terminou com o código {codigo}"
-                )));
+                // Se outro programa responde na porta e o nosso processo saiu, foi esse
+                // programa que impediu o Ollama de subir.
+                return if porta_ocupada_na_ultima_vez {
+                    EstadoOllama::PortaOcupada
+                } else {
+                    EstadoOllama::Indisponivel(ErroOllama::FalhaAoIniciar(format!(
+                        "o processo terminou com o código {codigo}"
+                    )))
+                };
             }
 
             if Instant::now() >= limite {
                 self.encerrar_se_iniciado_pelo_app();
-                return EstadoOllama::Indisponivel(ErroOllama::TempoEsgotado);
+                return if porta_ocupada_na_ultima_vez {
+                    EstadoOllama::PortaOcupada
+                } else {
+                    EstadoOllama::Indisponivel(ErroOllama::TempoEsgotado)
+                };
             }
             tokio::time::sleep(self.config.intervalo_entre_consultas).await;
         }

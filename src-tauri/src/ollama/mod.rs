@@ -212,7 +212,12 @@ impl ClienteOllama {
                 self.limites.ociosidade_pull,
                 cancelamento,
             )
-            .await?
+            .await
+            // Ao baixar, `404` significa que o modelo não existe na biblioteca.
+            .map_err(|erro| match erro {
+                ErroOllama::ModeloNaoEncontrado => ErroOllama::ModeloInexistente,
+                outro => outro,
+            })?
         else {
             return Ok(ResultadoDownload::Cancelado);
         };
@@ -227,7 +232,11 @@ impl ClienteOllama {
                 let dados: LinhaPull = serde_json::from_slice(linha)
                     .map_err(|erro| ErroOllama::RespostaInvalida(erro.to_string()))?;
                 if let Some(detalhe) = dados.error {
-                    return Err(ErroOllama::ErroDoOllama(detalhe));
+                    return Err(if indica_modelo_inexistente(&detalhe) {
+                        ErroOllama::ModeloInexistente
+                    } else {
+                        ErroOllama::ErroDoOllama(detalhe)
+                    });
                 }
 
                 let fase = dados.status.unwrap_or_default();
@@ -456,6 +465,13 @@ where
             }
         }
     }
+}
+
+/// A linha `error` de um `pull` diz que o modelo não existe? O Ollama 0.32.9 responde
+/// `pull model manifest: file does not exist` (confirmado na E06).
+fn indica_modelo_inexistente(detalhe: &str) -> bool {
+    let detalhe = detalhe.to_lowercase();
+    detalhe.contains("file does not exist") || detalhe.contains("not found")
 }
 
 /// Traduz uma falha de rede para o erro tipado.

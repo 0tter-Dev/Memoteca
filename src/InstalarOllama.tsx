@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
+import { formatarTamanho } from "./tipos";
 
 /** Progresso enviado pelo backend durante a instalação. */
 interface ProgressoInstalacao {
@@ -25,14 +26,6 @@ const TEXTO_DA_FASE: Record<ProgressoInstalacao["fase"], string> = {
   instalando: "Instalando o Ollama. Isso pode levar alguns minutos…",
   concluida: "Instalação concluída.",
 };
-
-function formatarTamanho(bytes: number): string {
-  const gigabyte = 1024 ** 3;
-  const megabyte = 1024 ** 2;
-  const valor = bytes >= gigabyte ? bytes / gigabyte : bytes / megabyte;
-  const unidade = bytes >= gigabyte ? "GB" : "MB";
-  return `${valor.toFixed(1).replace(".", ",")} ${unidade}`;
-}
 
 interface Props {
   /** Chamado quando a instalação termina com sucesso, para a tela voltar a detectar o Ollama. */

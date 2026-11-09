@@ -61,6 +61,9 @@ enum Comportamento {
     SobeOllama { atraso: Duration },
     /// O processo sobe, mas outro programa passa a responder na porta.
     OutroProgramaNaPorta,
+    /// Como o Ollama de verdade com a pasta de modelos vazia: a porta abre e responde algo que
+    /// não é um Ollama por um tempo, e só depois o servidor passa a funcionar.
+    PortaAbreAntesDeResponder { atraso: Duration },
     /// O processo fica vivo e nunca abre a porta.
     NuncaResponde,
     /// O processo termina na hora, com este código.
@@ -108,6 +111,9 @@ impl IniciadorDeProcesso for IniciadorFalso {
             Comportamento::OutroProgramaNaPorta => {
                 subir_servidor(&estado, self.endereco, Duration::ZERO, false);
             }
+            Comportamento::PortaAbreAntesDeResponder { atraso } => {
+                subir_servidor_que_demora_a_responder(&estado, self.endereco, atraso);
+            }
         }
         self.registro
             .filhos
@@ -151,6 +157,35 @@ fn subir_servidor(
             );
         }
         *estado.servidor.lock().unwrap() = Some(servidor);
+    });
+}
+
+/// A porta abre já, respondendo algo que não é um Ollama, e só depois de `atraso` o servidor
+/// passa a responder como um Ollama de verdade.
+fn subir_servidor_que_demora_a_responder(
+    estado: &Arc<EstadoFilho>,
+    endereco: SocketAddr,
+    atraso: Duration,
+) {
+    let estado = Arc::clone(estado);
+    tokio::spawn(async move {
+        let servidor = OllamaFalso::iniciar_em(&endereco.to_string()).await;
+        servidor.rota(
+            "GET",
+            "/api/version",
+            Resposta::json("<html>ainda subindo</html>"),
+        );
+        *estado.servidor.lock().unwrap() = Some(servidor);
+
+        tokio::time::sleep(atraso).await;
+        if let Some(servidor) = estado.servidor.lock().unwrap().as_ref() {
+            servidor.rota(
+                "GET",
+                "/api/version",
+                Resposta::json(r#"{"version":"0.32.9"}"#),
+            );
+            servidor.rota("GET", "/api/tags", Resposta::json(r#"{"models":[]}"#));
+        }
     });
 }
 
@@ -387,6 +422,33 @@ async fn preparar_de_novo_nao_inicia_um_segundo_processo() {
     assert_eq!(registro.iniciadas.lock().unwrap().len(), 1);
 }
 
+// ----- Ollama que demora a responder depois de abrir a porta -----
+
+#[tokio::test]
+async fn a_porta_aberta_antes_de_o_ollama_responder_nao_e_confundida_com_outro_programa() {
+    let (mut gerenciador, registro) = montar(
+        porta_livre().await,
+        true,
+        Comportamento::PortaAbreAntesDeResponder {
+            atraso: Duration::from_millis(1500),
+        },
+        Duration::from_secs(20),
+    );
+
+    let estado = gerenciador.preparar().await;
+
+    let EstadoOllama::EmExecucao(situacao) = estado else {
+        panic!("deveria esperar o Ollama responder: {estado:?}");
+    };
+    assert_eq!(situacao.origem, Origem::IniciadoPeloApp);
+    assert_eq!(registro.iniciadas.lock().unwrap().len(), 1);
+    let filho = Arc::clone(&registro.filhos.lock().unwrap()[0]);
+    assert!(
+        !filho.encerrado.load(Ordering::SeqCst),
+        "o processo que ainda estava subindo não pode ser encerrado"
+    );
+}
+
 // ----- Falhas ao iniciar -----
 
 #[tokio::test]
@@ -456,7 +518,7 @@ async fn r02_se_outro_programa_ocupa_a_porta_depois_de_iniciar_o_app_desfaz_o_qu
         porta_livre().await,
         true,
         Comportamento::OutroProgramaNaPorta,
-        Duration::from_secs(15),
+        Duration::from_secs(1),
     );
 
     let estado = gerenciador.preparar().await;

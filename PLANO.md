@@ -21,8 +21,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E04 | Persistência SQLite e modelo de dados | E01 | concluída |
 | E05 | Cliente da API do Ollama (HTTP e streaming) | E03 | concluída |
 | E06 | Ciclo de vida do Ollama | E05 | concluída |
-| E07 | Instalação silenciosa do Ollama | E06 | em revisão |
-| E08 | Onboarding e catálogo de modelos | E07 | pendente |
+| E07 | Instalação silenciosa do Ollama | E06 | concluída |
+| E08 | Onboarding e catálogo de modelos | E07 | em revisão |
 | E09 | Projetos | E03, E04 | pendente |
 | E10 | Conversas e chat com streaming | E05, E09 | pendente |
 | E11 | Memória manual (projeto e global) e injeção | E10 | pendente |
@@ -377,7 +377,19 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - Um download interrompido deixa o estado limpo e mostra mensagem amigável. **(falha)**
 - Um modelo inexistente digitado no campo livre produz mensagem amigável, e não o erro cru da API. **(falha)**
 
-**Decisões a tomar:** lista inicial de modelos do catálogo, margem de espaço que diferencia alerta de bloqueio, e se um download interrompido é limpo ou retomado.
+**Decisões a tomar:** lista inicial de modelos do catálogo, margem de espaço que diferencia alerta de bloqueio, e se um download interrompido é limpo ou retomado. _Decididas com o usuário, ver o Registro de decisões._
+
+**Como ficou (E08):**
+
+- **Código:** módulo `modelos` em `src-tauri/src/modelos/`: `catalogo` (carrega e valida o JSON embutido em `src-tauri/catalogo/modelos.json`), `nome` (validação do nome digitado), `espaco` (regra de espaço) e `servico` (`ServicoDeModelos`, o download guiado). Sem dependência nova.
+- **Catálogo:** 6 modelos em 3 faixas, com tag real, nome amigável, descrição, tamanho exato em bytes (soma das camadas no registro do Ollama em 2026-11-08), memória estimada e se tem raciocínio. A validação exige todos os campos, recusa campos desconhecidos, tags inválidas ou repetidas (sem diferenciar maiúsculas), texto vazio e tamanho zero. Tags e tamanhos mudam com o tempo, então o catálogo é revisado a cada release do Memoteca.
+- **Campo livre:** aceita `[host/][namespace/]modelo[:tag]` só com letras, números, `.`, `-` e `_`. Esquemas, espaços, portas, `..` e mais de 3 segmentos são recusados com mensagem amigável.
+- **Espaço:** medido na unidade da pasta de modelos (`OLLAMA_MODELS`, ou `%USERPROFILE%.ollamamodels`). Para modelo do catálogo, o bloqueio acontece **antes de começar**, e a tela mostra o alerta e pede confirmação. Durante o download, o espaço que **falta baixar** é conferido a cada 1,5 s (isso cobre o modelo digitado à mão, cujo tamanho só aparece depois que o download começa, e o disco que encheu no meio). Se deixar de caber, o download é interrompido. Espaço ilegível não bloqueia.
+- **Download:** `ServicoDeModelos::baixar` valida o nome, aplica a regra de espaço, baixa com progresso (as fases do Ollama viram `preparando`, `baixando`, `verificando`, `finalizando` e `concluido`) e confere que o modelo apareceu em `/api/tags` (com `:latest` quando a tag foi omitida). Antes de baixar, o comando garante que o Ollama está no ar, então "Continuar" também o reinicia se ele caiu.
+- **Erros:** `ErroOllama::ModeloInexistente` cobre o `404` e a linha `pull model manifest: file does not exist` (confirmada na E06). Interrupção e tempo esgotado mostram "o que já foi baixado foi guardado" e o botão **Continuar o download**.
+- **Correção na E06 (achada na E08):** com a pasta de modelos vazia, o Ollama 0.32.9 abre a porta e fica mais de 3 s sem responder direito, e o app o confundia com "outro programa" e o encerrava. Agora, enquanto o processo que o app iniciou está vivo, "porta ocupada" é tratada como "ainda subindo", e só vale se o processo sair ou se o prazo (30 s) acabar. Há um teste para isso.
+- **Unidade de tamanho:** a tela mostra GB como 1024³ bytes, como o Windows, então o `llama3.2:3b` (2.019.393.189 bytes) aparece como 1,9 GB.
+- **Interface:** o onboarding (T02) tem as boas-vindas (com o aviso de independência), o Ollama (verificar, instalar ou corrigir), o modelo (catálogo por faixa e campo livre), o download (progresso, cancelar, continuar) e o pronto. Quem já concluiu antes pula as boas-vindas, e o onboarding volta se faltar Ollama ou modelo. `onboarding_concluido` fica no banco.
 
 ### E09 — Projetos
 
@@ -573,6 +585,9 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Ferramenta de E2E | Playwright conectado ao WebView2 por CDP. A E15 começa com um teste-piloto, e a alternativa, se falhar, é o `tauri-driver` | 2026-11-08 |
 | Decisões de design do contrato Ollama (E03) | O Ollama só é acessado pelo backend Rust; endereço fixo `127.0.0.1:11434`; `think` não é enviado e o `thinking` do histórico não é reenviado; só `temperature` e `num_ctx` em `options`; sugestões de memória por `/api/chat` com `format` e sem stream. Valem como aprovadas com o merge da E03 | 2026-11-08 |
 | Encerramento garantido do Ollama | Job Object do Windows por processo iniciado, com `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, via `windows-sys` (dependência só do Windows, já presente na árvore do Tauri, com `unsafe` isolado em `job.rs`). Se o app for finalizado à força, o Windows fecha o job e encerra o Ollama e os filhos dele. Se não for possível criar o job, nada é iniciado | 2026-11-08 |
+| Catálogo inicial de modelos | 6 modelos em 3 faixas: leves `llama3.2:3b` (2,0 GB) e `qwen3:4b` (2,5 GB); equilibrados `gemma3:4b` (3,3 GB), `qwen3:8b` (5,2 GB) e `llama3.1:8b` (4,9 GB); potente `gpt-oss:20b` (13,8 GB). Tamanhos conferidos no registro do Ollama em 2026-11-08, e a memória é estimativa | 2026-11-08 |
+| Regra de espaço para modelos | Bloqueia se o espaço livre é menor que o tamanho do que falta baixar. Alerta, com confirmação do usuário, se depois do download sobrariam menos de 5 GB livres. A medição é na unidade da pasta de modelos do Ollama. Espaço ilegível não bloqueia | 2026-11-08 |
+| Download de modelo interrompido | **Retomar.** O Ollama guarda o que já baixou e retoma do ponto onde parou, e o modelo só aparece na lista quando está completo. O Memoteca não apaga nada na pasta do Ollama. A mensagem amigável oferece "Continuar o download" | 2026-11-08 |
 | Origem do instalador do Ollama | A **última versão oficial**: o app consulta a API de releases do GitHub do Ollama (a mesma release para a qual `ollama.com/download/OllamaSetup.exe` redireciona), que informa URL, tamanho e SHA-256, e baixa o `OllamaSetup.exe`. A URL de download precisa ser `https` e do host `github.com` | 2026-11-08 |
 | Validação do instalador | SHA-256 conferido com o da release **e** assinatura digital válida com publicador `Ollama Inc.`, lida pelo PowerShell do Windows (`Get-AuthenticodeSignature`), sem dependência nova. Se qualquer uma falhar, o instalador não é executado e é removido | 2026-11-08 |
 | TLS do cliente HTTP | TLS do Windows (`native-tls`, SChannel), com o proxy do sistema (`system-proxy`). O cliente do Ollama local continua sem TLS e sem proxy | 2026-11-08 |
@@ -588,9 +603,6 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | --- | --- |
 | Confirmar a versão mínima do Ollama (0.30.0) contra um Ollama real dessa versão. Na E06 só havia a 0.32.9 para testar | E15 (checklist manual) |
 | Comportamento de links nas respostas do modelo (abrir no navegador exige o plugin `opener` e uma permissão nova; por ora o app não abre links) | E10 |
-| Lista inicial do catálogo de modelos | E08 |
-| Margem de espaço (alerta ou bloqueio) | E08 |
-| Download interrompido: limpar ou retomar | E08 |
 | Tamanho do truncamento do título | E10 |
 | Excluir conversa e editar mensagem | E10 |
 | Ordem de montagem do contexto e limite do `num_ctx` | E11 |
@@ -652,7 +664,7 @@ Não usados no MVP: `/api/generate`, `/api/ps`, `/api/create`, `/api/copy`, `/ap
 - **Progresso:** soma de `completed` dividida pela soma de `total` de todos os `digest` já vistos. Até aparecer o primeiro `total`, o progresso é indeterminado.
 - **Sucesso** é exclusivamente a linha `success`. Um stream que termina sem ela é download interrompido.
 - **Cancelar** é fechar a conexão. A documentação diz que um download cancelado é retomado do ponto onde parou na próxima chamada, o que alimenta a decisão "limpar ou retomar" da E08.
-- Modelo inexistente: **confirmado na E06 (Ollama 0.32.9)** que o `/api/pull` responde `HTTP 200` e, no stream, `{"status":"pulling manifest"}` seguido de `{"error":"pull model manifest: file does not exist"}`. Por isso a E08 deve tratar essa linha `error` (hoje o cliente a devolve como `ErroDoOllama`) para mostrar a mensagem de modelo inexistente. Já `/api/show` e `/api/chat` com modelo inexistente respondem `HTTP 404` e `{"error":"model 'x' not found"}`.
+- Modelo inexistente: **confirmado na E06 (Ollama 0.32.9)** que o `/api/pull` responde `HTTP 200` e, no stream, `{"status":"pulling manifest"}` seguido de `{"error":"pull model manifest: file does not exist"}`. Tratado na E08: essa linha (e o `404`) viram `ErroOllama::ModeloInexistente`, com a mensagem amigável. Já `/api/show` e `/api/chat` com modelo inexistente respondem `HTTP 404` e `{"error":"model 'x' not found"}`.
 
 #### `POST /api/chat`
 

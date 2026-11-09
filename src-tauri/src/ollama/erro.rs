@@ -17,6 +17,8 @@ pub enum ErroOllama {
     VersaoAntiga { encontrada: Versao, minima: Versao },
     /// O modelo não está instalado.
     ModeloNaoEncontrado,
+    /// O modelo não existe na biblioteca do Ollama (erro ao tentar baixá-lo).
+    ModeloInexistente,
     /// O modelo não serve para conversa (por exemplo, só gera embeddings).
     ModeloSemSuporte,
     /// Nenhum byte chegou dentro do limite de ociosidade.
@@ -48,6 +50,8 @@ impl ErroOllama {
             Self::ModeloNaoEncontrado => {
                 "Este modelo não está instalado. Baixe o modelo e tente de novo.".to_owned()
             }
+            Self::ModeloInexistente => "Não encontramos esse modelo na biblioteca do Ollama. \n                Confira o nome e tente de novo."
+                .to_owned(),
             Self::ModeloSemSuporte => {
                 "Este modelo não serve para conversa. Escolha outro modelo.".to_owned()
             }
@@ -81,6 +85,7 @@ impl fmt::Display for ErroOllama {
                 write!(f, "versão {encontrada} abaixo da mínima {minima}")
             }
             Self::ModeloNaoEncontrado => write!(f, "modelo não encontrado"),
+            Self::ModeloInexistente => write!(f, "modelo inexistente na biblioteca"),
             Self::ModeloSemSuporte => write!(f, "modelo sem suporte a conversa"),
             Self::TempoEsgotado => write!(f, "tempo esgotado sem receber dados"),
             Self::ConexaoInterrompida => write!(f, "conexão interrompida"),

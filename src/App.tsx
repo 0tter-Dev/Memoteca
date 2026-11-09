@@ -1,21 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
-import InstalarOllama from "./InstalarOllama";
+import Onboarding from "./Onboarding";
+import type { EstadoOllama } from "./tipos";
 
 const MENSAGEM_DADOS =
   "Não foi possível verificar os dados do Memoteca. Feche o aplicativo e abra-o de novo.";
 const MENSAGEM_OLLAMA =
   "Não foi possível verificar o Ollama. Feche o aplicativo e abra-o de novo.";
-
-/** Estado do Ollama, como o backend devolve. */
-interface EstadoOllama {
-  estado: "em_execucao" | "nao_instalado" | "porta_ocupada" | "indisponivel";
-  versao: string | null;
-  origem: "externo" | "iniciado_pelo_app" | null;
-  modelosInstalados: number | null;
-  aviso: string | null;
-  mensagem: string | null;
-}
 
 function mensagemDoErro(erro: unknown, padrao: string): string {
   return typeof erro === "string" ? erro : padrao;
@@ -25,6 +16,11 @@ function App() {
   const [erroDeDados, setErroDeDados] = useState<string | null>(null);
   const [ollama, setOllama] = useState<EstadoOllama | null>(null);
   const [erroDoOllama, setErroDoOllama] = useState<string | null>(null);
+  /** `null` enquanto ainda não se sabe. */
+  const [onboardingConcluido, setOnboardingConcluido] = useState<
+    boolean | null
+  >(null);
+  const [jaConcluiuAntes, setJaConcluiuAntes] = useState(false);
 
   // O backend abre o banco ao iniciar. Se falhar, ele devolve a mensagem amigável.
   useEffect(() => {
@@ -34,6 +30,27 @@ function App() {
         setErroDeDados(mensagemDoErro(erro, MENSAGEM_DADOS));
       }
     });
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  // Já passou pelo onboarding antes?
+  useEffect(() => {
+    let ativo = true;
+    invoke<boolean>("onboarding_concluido")
+      .then((concluido) => {
+        if (ativo) {
+          setOnboardingConcluido(concluido);
+          setJaConcluiuAntes(concluido);
+        }
+      })
+      // Sem poder ler a configuração, mostra o onboarding, que é seguro.
+      .catch(() => {
+        if (ativo) {
+          setOnboardingConcluido(false);
+        }
+      });
     return () => {
       ativo = false;
     };
@@ -55,28 +72,51 @@ function App() {
     prepararOllama();
   }, [prepararOllama]);
 
-  const problemaComOllama =
-    erroDoOllama ??
-    (ollama && ollama.estado !== "em_execucao" ? ollama.mensagem : null);
+  const alertaDeDados = erroDeDados && (
+    <p role="alert" className="erro">
+      {erroDeDados}
+    </p>
+  );
+
+  // Erro ao verificar o Ollama: não dá para seguir, então só mostra a mensagem.
+  if (erroDoOllama) {
+    return (
+      <main className="app">
+        <h1>Memoteca</h1>
+        {alertaDeDados}
+        <p role="alert" className="erro">
+          {erroDoOllama}
+        </p>
+      </main>
+    );
+  }
+
+  const carregando = ollama === null || onboardingConcluido === null;
+  const precisaDeOnboarding =
+    !carregando &&
+    (!onboardingConcluido ||
+      ollama.estado !== "em_execucao" ||
+      (ollama.modelosInstalados ?? 0) === 0);
+
+  if (precisaDeOnboarding) {
+    return (
+      <main className="app">
+        <h1>Memoteca</h1>
+        {alertaDeDados}
+        <Onboarding
+          ollama={ollama}
+          jaConcluiuAntes={jaConcluiuAntes}
+          aoAtualizarOllama={prepararOllama}
+          aoConcluir={() => setOnboardingConcluido(true)}
+        />
+      </main>
+    );
+  }
 
   return (
     <main className="app">
       <h1>Memoteca</h1>
-      {erroDeDados ? (
-        <p role="alert" className="erro">
-          {erroDeDados}
-        </p>
-      ) : (
-        <p>Em construção.</p>
-      )}
-      {problemaComOllama && (
-        <p role="alert" className="erro">
-          {problemaComOllama}
-        </p>
-      )}
-      {ollama?.estado === "nao_instalado" && (
-        <InstalarOllama aoConcluir={prepararOllama} />
-      )}
+      {alertaDeDados ?? <p>Em construção.</p>}
       {ollama?.estado === "em_execucao" && (
         <>
           <p role="status">Ollama {ollama.versao} em execução.</p>
@@ -84,9 +124,6 @@ function App() {
             <p role="status" className="aviso">
               {ollama.aviso}
             </p>
-          )}
-          {ollama.modelosInstalados === 0 && (
-            <p role="status">Nenhum modelo instalado ainda.</p>
           )}
         </>
       )}
