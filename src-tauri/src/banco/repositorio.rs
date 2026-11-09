@@ -10,8 +10,48 @@ use super::modelos::{
     Conversa, DadosConversa, DadosProjeto, EscopoMemoria, Memoria, Mensagem, Papel, Projeto,
     ResumoExclusaoProjeto,
 };
+use crate::modelos::NomeDeModelo;
 
 type Resultado<T> = Result<T, ErroBanco>;
+
+/// Tamanho máximo do nome de um projeto, em caracteres.
+pub const NOME_DO_PROJETO_MAXIMO: usize = 100;
+/// Tamanho máximo das instruções (system prompt) de um projeto, em caracteres.
+pub const INSTRUCOES_DO_PROJETO_MAXIMO: usize = 20_000;
+
+/// Confere e normaliza os dados de um projeto: o nome é obrigatório (sem espaços nas pontas),
+/// os textos têm tamanho máximo e o modelo padrão, se houver, precisa ser um nome válido.
+fn validar_projeto(dados: &DadosProjeto) -> Resultado<DadosProjeto> {
+    let nome = dados.nome.trim();
+    if nome.is_empty() {
+        return Err(ErroBanco::Rejeitado("Dê um nome ao projeto.".to_owned()));
+    }
+    if nome.chars().count() > NOME_DO_PROJETO_MAXIMO {
+        return Err(ErroBanco::Rejeitado(format!(
+            "O nome do projeto pode ter no máximo {NOME_DO_PROJETO_MAXIMO} caracteres."
+        )));
+    }
+    if dados.system_prompt.chars().count() > INSTRUCOES_DO_PROJETO_MAXIMO {
+        return Err(ErroBanco::Rejeitado(
+            "As instruções do projeto são grandes demais. Reduza o texto e tente de novo."
+                .to_owned(),
+        ));
+    }
+
+    let modelo_padrao = match dados.modelo_padrao.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(modelo) => {
+            NomeDeModelo::validar(modelo)
+                .map_err(|erro| ErroBanco::Rejeitado(erro.mensagem_amigavel()))?;
+            Some(modelo.to_owned())
+        }
+    };
+    Ok(DadosProjeto {
+        nome: nome.to_owned(),
+        system_prompt: dados.system_prompt.clone(),
+        modelo_padrao,
+    })
+}
 
 /// Instante atual em SQL, no mesmo formato dos valores padrão das colunas de data.
 const AGORA: &str = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
@@ -111,6 +151,7 @@ impl Banco {
     // ----- Projetos -----
 
     pub fn criar_projeto(&self, dados: &DadosProjeto) -> Resultado<Projeto> {
+        let dados = validar_projeto(dados)?;
         let id = novo_id();
         self.conexao.execute(
             "INSERT INTO projetos (id, nome, system_prompt, modelo_padrao)
@@ -131,7 +172,7 @@ impl Banco {
     pub fn listar_projetos(&self) -> Resultado<Vec<Projeto>> {
         let mut consulta = self
             .conexao
-            .prepare("SELECT * FROM projetos ORDER BY criado_em, id")?;
+            .prepare("SELECT * FROM projetos ORDER BY nome COLLATE NOCASE, criado_em, id")?;
         let projetos = consulta
             .query_map([], projeto_da_linha)?
             .collect::<Result<Vec<_>, _>>()?;
@@ -139,6 +180,7 @@ impl Banco {
     }
 
     pub fn atualizar_projeto(&self, id: &str, dados: &DadosProjeto) -> Resultado<Projeto> {
+        let dados = validar_projeto(dados)?;
         let alteradas = self.conexao.execute(
             &format!(
                 "UPDATE projetos
@@ -181,6 +223,50 @@ impl Banco {
             return Err(ErroBanco::NaoEncontrado);
         }
         Ok(())
+    }
+
+    // ----- Modelo herdado pelas conversas -----
+
+    /// Modelo que uma **nova conversa** do projeto herda:
+    ///
+    /// 1. o modelo padrão do projeto, se estiver configurado;
+    /// 2. senão, o modelo da **primeira conversa criada** no projeto que tenha modelo;
+    /// 3. senão, nenhum (a tela pede ao usuário que escolha).
+    pub fn modelo_herdado_pelo_projeto(&self, projeto_id: &str) -> Resultado<Option<String>> {
+        let projeto = self.obter_projeto(projeto_id)?;
+        if let Some(modelo) = projeto.modelo_padrao.filter(|m| !m.trim().is_empty()) {
+            return Ok(Some(modelo));
+        }
+        Ok(self
+            .conexao
+            .query_row(
+                "SELECT modelo FROM conversas
+                 WHERE projeto_id = ?1 AND modelo IS NOT NULL AND TRIM(modelo) <> ''
+                 ORDER BY criado_em, id LIMIT 1",
+                [projeto_id],
+                |linha| linha.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Cria uma conversa **dentro de um projeto**, herdando o modelo conforme
+    /// `modelo_herdado_pelo_projeto`. Não existe criação de conversa fora de um projeto.
+    pub fn criar_conversa_herdando_modelo(
+        &self,
+        projeto_id: &str,
+        titulo: &str,
+    ) -> Resultado<Conversa> {
+        let modelo = self.modelo_herdado_pelo_projeto(projeto_id)?;
+        self.criar_conversa(
+            projeto_id,
+            &DadosConversa {
+                titulo: titulo.to_owned(),
+                modelo,
+                temperature: None,
+                num_ctx: None,
+                keep_alive: None,
+            },
+        )
     }
 
     // ----- Conversas -----

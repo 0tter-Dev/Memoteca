@@ -35,6 +35,8 @@ function simularBackend({
         return onboarding();
       case "preparar_ollama":
         return ollama();
+      case "listar_projetos":
+        return Promise.resolve([]);
       default:
         return Promise.reject(`comando inesperado: ${comando}`);
     }
@@ -53,23 +55,24 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Memoteca" }),
     ).toBeInTheDocument();
-    await screen.findByText("Em construção.");
+    await screen.findByText("Nenhum projeto ainda");
   });
 
   it("não usa o nome provisório do projeto", async () => {
     const { container } = render(<App />);
-    await screen.findByText("Em construção.");
+    await screen.findByText("Nenhum projeto ainda");
 
     expect(container.textContent?.toLowerCase()).not.toContain("ollamaui");
   });
 
   it("consulta o banco, o onboarding e o Ollama ao abrir", async () => {
     render(<App />);
-    await screen.findByText("Em construção.");
+    await screen.findByText("Nenhum projeto ainda");
 
     expect(invoke).toHaveBeenCalledWith("estado_do_banco");
     expect(invoke).toHaveBeenCalledWith("onboarding_concluido");
     expect(invoke).toHaveBeenCalledWith("preparar_ollama");
+    expect(invoke).toHaveBeenCalledWith("listar_projetos");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -86,7 +89,6 @@ describe("App", () => {
     expect(alerta).toHaveTextContent(
       "Não foi possível abrir os dados do Memoteca. Seus dados não foram apagados.",
     );
-    expect(screen.queryByText("Em construção.")).not.toBeInTheDocument();
   });
 
   it("mostra uma mensagem amigável, e não o erro cru, quando a consulta do banco falha de outro jeito", async () => {
@@ -162,14 +164,13 @@ describe("App e o onboarding", () => {
     expect(
       await screen.findByRole("heading", { name: "Bem-vindo ao Memoteca" }),
     ).toBeVisible();
-    expect(screen.queryByText("Em construção.")).not.toBeInTheDocument();
   });
 
   it("quem já concluiu vai direto ao app", async () => {
     simularBackend();
     render(<App />);
 
-    expect(await screen.findByText("Em construção.")).toBeVisible();
+    expect(await screen.findByText("Nenhum projeto ainda")).toBeVisible();
     expect(
       screen.queryByRole("heading", { name: "Bem-vindo ao Memoteca" }),
     ).not.toBeInTheDocument();

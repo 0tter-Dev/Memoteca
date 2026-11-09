@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   color-scheme: light dark;
   font-family: system-ui, "Segoe UI", sans-serif;
@@ -8,10 +10,20 @@ body {
   margin: 0;
 }
 
+/* Telas centralizadas (onboarding e mensagens de erro). */
 .app {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  padding: 1.5rem;
+}
+
+.erro {
+  color: light-dark(#b42318, #fda29b);
+}
+
+.aviso {
+  color: light-dark(#b54708, #fec84b);
 }

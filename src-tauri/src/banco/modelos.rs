@@ -1,6 +1,9 @@
 //! Entidades do banco. Datas são texto ISO 8601 em UTC, com milissegundos.
 
-#[derive(Debug, Clone, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Projeto {
     pub id: String,
     pub nome: String,
@@ -11,7 +14,8 @@ pub struct Projeto {
 }
 
 /// Campos editáveis de um projeto.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DadosProjeto {
     pub nome: String,
     pub system_prompt: String,
@@ -19,7 +23,7 @@ pub struct DadosProjeto {
 }
 
 /// O que será apagado junto com um projeto, para a tela de confirmação.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ResumoExclusaoProjeto {
     pub conversas: u64,
     pub mensagens: u64,
