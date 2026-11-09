@@ -40,7 +40,7 @@ pub enum ErroInstalacao {
     Interno(String),
 }
 
-fn em_gb(bytes: u64) -> String {
+pub(crate) fn em_gb(bytes: u64) -> String {
     format!("{:.1}", bytes as f64 / 1_073_741_824.0).replace('.', ",")
 }
 

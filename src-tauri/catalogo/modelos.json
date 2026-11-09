@@ -1,0 +1,60 @@
+{
+  "versao": 1,
+  "atualizadoEm": "2026-11-08",
+  "modelos": [
+    {
+      "tag": "llama3.2:3b",
+      "nome": "Llama 3.2 (3B)",
+      "descricao": "Pequeno e rápido. Bom para começar em computadores simples.",
+      "faixa": "leve",
+      "tamanhoEmBytes": 2019393189,
+      "ramEstimadaEmGb": 4,
+      "raciocinio": false
+    },
+    {
+      "tag": "qwen3:4b",
+      "nome": "Qwen 3 (4B)",
+      "descricao": "Leve e com raciocínio: pensa antes de responder.",
+      "faixa": "leve",
+      "tamanhoEmBytes": 2497293931,
+      "ramEstimadaEmGb": 6,
+      "raciocinio": true
+    },
+    {
+      "tag": "gemma3:4b",
+      "nome": "Gemma 3 (4B)",
+      "descricao": "Modelo do Google, equilibrado e bom em português.",
+      "faixa": "equilibrado",
+      "tamanhoEmBytes": 3350272403,
+      "ramEstimadaEmGb": 6,
+      "raciocinio": false
+    },
+    {
+      "tag": "qwen3:8b",
+      "nome": "Qwen 3 (8B)",
+      "descricao": "Respostas mais completas, com raciocínio. Pede um computador melhor.",
+      "faixa": "equilibrado",
+      "tamanhoEmBytes": 5225388164,
+      "ramEstimadaEmGb": 10,
+      "raciocinio": true
+    },
+    {
+      "tag": "llama3.1:8b",
+      "nome": "Llama 3.1 (8B)",
+      "descricao": "Um dos modelos mais usados, para conversas e textos em geral.",
+      "faixa": "equilibrado",
+      "tamanhoEmBytes": 4920753328,
+      "ramEstimadaEmGb": 10,
+      "raciocinio": false
+    },
+    {
+      "tag": "gpt-oss:20b",
+      "nome": "GPT-OSS (20B)",
+      "descricao": "O mais capaz da lista, com raciocínio. Exige bastante memória e disco.",
+      "faixa": "potente",
+      "tamanhoEmBytes": 13793441566,
+      "ramEstimadaEmGb": 20,
+      "raciocinio": true
+    }
+  ]
+}

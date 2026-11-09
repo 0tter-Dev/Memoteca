@@ -1,13 +1,19 @@
 pub mod banco;
 pub mod instalador;
+pub mod modelos;
 pub mod ollama;
 
 use std::sync::{Arc, Mutex};
 
 use banco::Banco;
 use instalador::{InstaladorDoOllama, ProgressoInstalacao, ResultadoInstalacao};
+use modelos::{
+    AvaliacaoParaInterface, Catalogo, ProgressoDoModelo, ResultadoDoModelo, ServicoDeModelos,
+};
+use ollama::ClienteOllama;
 use ollama::ciclo::{EstadoParaInterface, GerenciadorOllama};
 use ollama::instalacao::DetectorReal;
+use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{Manager, RunEvent};
 use tokio_util::sync::CancellationToken;
@@ -104,6 +110,145 @@ fn cancelar_instalacao_ollama(estado: tauri::State<'_, InstalacaoDoApp>) {
     }
 }
 
+/// Chave de configuração que marca o onboarding como concluído.
+const CONFIG_ONBOARDING_CONCLUIDO: &str = "onboarding_concluido";
+
+/// O usuário já concluiu o onboarding?
+#[tauri::command]
+fn onboarding_concluido(estado: tauri::State<'_, EstadoBanco>) -> Result<bool, String> {
+    let banco = estado.0.as_ref().map_err(Clone::clone)?;
+    let banco = banco.lock().map_err(|_| "Tente de novo.".to_owned())?;
+    banco
+        .obter_configuracao(CONFIG_ONBOARDING_CONCLUIDO)
+        .map(|valor| valor.as_deref() == Some("sim"))
+        .map_err(|erro| erro.mensagem_amigavel())
+}
+
+/// Marca o onboarding como concluído.
+#[tauri::command]
+fn concluir_onboarding(estado: tauri::State<'_, EstadoBanco>) -> Result<(), String> {
+    let banco = estado.0.as_ref().map_err(Clone::clone)?;
+    let banco = banco.lock().map_err(|_| "Tente de novo.".to_owned())?;
+    banco
+        .definir_configuracao(CONFIG_ONBOARDING_CONCLUIDO, "sim")
+        .map_err(|erro| erro.mensagem_amigavel())
+}
+
+/// Catálogo de modelos, o espaço em disco e o download em andamento, se houver. Só um
+/// download roda por vez.
+struct ModelosDoApp {
+    servico: Result<ServicoDeModelos, String>,
+    em_andamento: Mutex<Option<CancellationToken>>,
+}
+
+/// Falha do download, no formato que a tela recebe.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FalhaDoDownloadParaInterface {
+    mensagem: String,
+    /// Tentar de novo retoma do ponto onde parou (o botão diz "Continuar").
+    pode_continuar: bool,
+}
+
+impl FalhaDoDownloadParaInterface {
+    fn simples(mensagem: &str) -> Self {
+        Self {
+            mensagem: mensagem.to_owned(),
+            pode_continuar: false,
+        }
+    }
+}
+
+/// O catálogo curado de modelos, já validado.
+#[tauri::command]
+fn catalogo_de_modelos(estado: tauri::State<'_, ModelosDoApp>) -> Result<Catalogo, String> {
+    let servico = estado.servico.as_ref().map_err(Clone::clone)?;
+    Ok(servico.catalogo().clone())
+}
+
+/// Avalia o espaço em disco para um modelo do catálogo, antes de baixar.
+#[tauri::command]
+fn avaliar_espaco_do_modelo(
+    tag: String,
+    estado: tauri::State<'_, ModelosDoApp>,
+) -> Result<AvaliacaoParaInterface, String> {
+    let servico = estado.servico.as_ref().map_err(Clone::clone)?;
+    let (avaliacao, necessario, livre) = servico.avaliar_espaco(&tag);
+    Ok(avaliacao.para_interface(necessario, livre))
+}
+
+/// Baixa um modelo, enviando o progresso pelo `canal`. Devolve `concluido` ou `cancelado`,
+/// ou a falha com a mensagem amigável.
+#[tauri::command]
+async fn baixar_modelo(
+    nome: String,
+    canal: Channel<ProgressoDoModelo>,
+    estado: tauri::State<'_, ModelosDoApp>,
+    ollama_do_app: tauri::State<'_, OllamaDoApp>,
+) -> Result<&'static str, FalhaDoDownloadParaInterface> {
+    let servico = estado
+        .servico
+        .as_ref()
+        .map_err(|mensagem| FalhaDoDownloadParaInterface::simples(mensagem))?;
+
+    // Garante que o Ollama está no ar. Se ele caiu no meio de um download, é aqui que o
+    // "Continuar" o inicia de novo, e o download retoma de onde parou.
+    let gerenciador = ollama_do_app
+        .0
+        .as_ref()
+        .map_err(|mensagem| FalhaDoDownloadParaInterface::simples(mensagem))?;
+    let situacao = gerenciador.lock().await.preparar().await;
+    if !matches!(situacao, ollama::ciclo::EstadoOllama::EmExecucao(_)) {
+        let mensagem = situacao
+            .para_interface()
+            .mensagem
+            .unwrap_or_else(|| "O Ollama não está disponível. Tente de novo.".to_owned());
+        return Err(FalhaDoDownloadParaInterface::simples(&mensagem));
+    }
+
+    let cancelamento = CancellationToken::new();
+    {
+        let mut vaga = estado
+            .em_andamento
+            .lock()
+            .map_err(|_| FalhaDoDownloadParaInterface::simples("Tente de novo."))?;
+        if vaga.is_some() {
+            return Err(FalhaDoDownloadParaInterface::simples(
+                "Já há um download de modelo em andamento.",
+            ));
+        }
+        *vaga = Some(cancelamento.clone());
+    }
+    let _vaga = VagaDeInstalacao(&estado.em_andamento);
+
+    let resultado = servico
+        .baixar(&nome, &cancelamento, &mut |progresso| {
+            let _ = canal.send(progresso);
+        })
+        .await;
+    match resultado {
+        Ok(ResultadoDoModelo::Concluido) => Ok("concluido"),
+        Ok(ResultadoDoModelo::Cancelado) => Ok("cancelado"),
+        Err(erro) => {
+            eprintln!("o download do modelo falhou: {erro}");
+            Err(FalhaDoDownloadParaInterface {
+                mensagem: erro.mensagem_amigavel(),
+                pode_continuar: erro.pode_continuar(),
+            })
+        }
+    }
+}
+
+/// Cancela o download de modelo em andamento. Não faz nada se não houver nenhum.
+#[tauri::command]
+fn cancelar_download_modelo(estado: tauri::State<'_, ModelosDoApp>) {
+    if let Ok(vaga) = estado.em_andamento.lock()
+        && let Some(cancelamento) = vaga.as_ref()
+    {
+        cancelamento.cancel();
+    }
+}
+
 /// Abre o banco na pasta de dados do app. O texto técnico do erro vai para o log de erro
 /// padrão, e só a mensagem amigável sobe para a interface.
 fn abrir_banco(app: &tauri::AppHandle) -> Result<Mutex<Banco>, String> {
@@ -156,13 +301,38 @@ pub fn run() {
                 instalador,
                 em_andamento: Mutex::new(None),
             });
+
+            let servico = ClienteOllama::novo()
+                .map_err(|erro| erro.mensagem_amigavel())
+                .and_then(|cliente| {
+                    let catalogo = modelos::catalogo_embutido().map_err(|erro| {
+                        eprintln!("o catálogo de modelos é inválido: {erro}");
+                        "Não foi possível carregar a lista de modelos.".to_owned()
+                    })?;
+                    Ok(ServicoDeModelos::novo(
+                        cliente,
+                        Arc::new(instalador::disco::EspacoReal),
+                        modelos::espaco::pasta_de_modelos_do_ambiente(),
+                        catalogo,
+                    ))
+                });
+            app.manage(ModelosDoApp {
+                servico,
+                em_andamento: Mutex::new(None),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             estado_do_banco,
             preparar_ollama,
             instalar_ollama,
-            cancelar_instalacao_ollama
+            cancelar_instalacao_ollama,
+            onboarding_concluido,
+            concluir_onboarding,
+            catalogo_de_modelos,
+            avaliar_espaco_do_modelo,
+            baixar_modelo,
+            cancelar_download_modelo
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o aplicativo Memoteca")
