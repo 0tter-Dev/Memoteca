@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 
 use memoteca_lib::banco::id::novo_id;
 use memoteca_lib::banco::migracoes::{self, MIGRACOES, Migracao};
-use memoteca_lib::banco::{Banco, DadosConversa, DadosProjeto, ErroBanco, EscopoMemoria, Papel};
+use memoteca_lib::banco::{
+    Banco, DadosConversa, DadosProjeto, ErroBanco, EscopoMemoria, EstadoMensagem, Papel,
+};
 use rusqlite::Connection;
 
 /// Pasta temporária única, apagada ao fim do teste.
@@ -951,5 +953,215 @@ fn nao_existe_conversa_sem_projeto_nem_modelo_herdado_de_projeto_inexistente() {
     assert!(matches!(
         banco.criar_conversa(&novo_id(), &conversa("Solta")),
         Err(ErroBanco::Invalido(_))
+    ));
+}
+
+// ----- E10: migração 2 (estado da mensagem) -----
+
+#[test]
+fn a_migracao_2_acrescenta_o_estado_das_mensagens_sem_perder_dados_e_guarda_uma_copia() {
+    let pasta = PastaTemporaria::nova();
+    let arquivo = pasta.arquivo_do_banco();
+
+    // Banco criado pela versão anterior do app, que só conhecia a migração 1.
+    let (conversa_id, mensagem_id) = {
+        let antigo =
+            Banco::abrir_com(&arquivo, &MIGRACOES[..1], Some(&pasta.pasta_de_copias())).unwrap();
+        assert_eq!(antigo.versao_do_esquema().unwrap(), 1);
+        let projeto = antigo.criar_projeto(&projeto("Antigo")).unwrap();
+        let conversa = antigo
+            .criar_conversa(&projeto.id, &conversa("Velha"))
+            .unwrap();
+        let bruta = conexao_crua(&arquivo);
+        let id = novo_id();
+        bruta
+            .execute(
+                "INSERT INTO mensagens (id, conversa_id, posicao, papel, conteudo)
+                 VALUES (?1, ?2, 1, 'user', 'Mensagem antiga')",
+                [&id, &conversa.id],
+            )
+            .unwrap();
+        (conversa.id, id)
+    };
+
+    let banco = Banco::abrir(&arquivo, &pasta.pasta_de_copias()).unwrap();
+
+    assert_eq!(banco.versao_do_esquema().unwrap(), 2);
+    let antiga = banco.obter_mensagem(&mensagem_id).unwrap();
+    assert_eq!(antiga.conteudo, "Mensagem antiga");
+    assert_eq!(
+        antiga.estado,
+        EstadoMensagem::Completa,
+        "as antigas são completas"
+    );
+    assert_eq!(
+        copias_na_pasta(&pasta.pasta_de_copias()).len(),
+        1,
+        "cópia antes de migrar"
+    );
+
+    // O novo estado funciona, e só aceita os valores válidos.
+    let interrompida = banco
+        .adicionar_mensagem_com_estado(
+            &conversa_id,
+            Papel::Assistente,
+            "pela metade",
+            None,
+            EstadoMensagem::Interrompida,
+        )
+        .unwrap();
+    assert_eq!(interrompida.estado, EstadoMensagem::Interrompida);
+    let completa = banco
+        .substituir_mensagem(&interrompida.id, "inteira", None)
+        .unwrap();
+    assert_eq!(completa.estado, EstadoMensagem::Completa);
+    drop(banco);
+    let invalido = conexao_crua(&arquivo).execute(
+        "UPDATE mensagens SET estado = 'qualquer' WHERE id = ?1",
+        [&mensagem_id],
+    );
+    assert!(invalido.is_err());
+}
+
+#[test]
+fn os_parametros_de_uma_conversa_sao_validados() {
+    let banco = Banco::em_memoria().unwrap();
+    let p = banco.criar_projeto(&projeto("P")).unwrap();
+    let valida = || DadosConversa {
+        titulo: "Título".into(),
+        modelo: Some("qwen3:8b".into()),
+        temperature: Some(0.7),
+        num_ctx: Some(8192),
+        keep_alive: Some("5m".into()),
+    };
+    assert!(banco.criar_conversa(&p.id, &valida()).is_ok());
+
+    let casos: Vec<(&str, DadosConversa)> = vec![
+        (
+            "título vazio",
+            DadosConversa {
+                titulo: "  ".into(),
+                ..valida()
+            },
+        ),
+        (
+            "título enorme",
+            DadosConversa {
+                titulo: "t".repeat(101),
+                ..valida()
+            },
+        ),
+        (
+            "modelo inválido",
+            DadosConversa {
+                modelo: Some("com espaço".into()),
+                ..valida()
+            },
+        ),
+        (
+            "temperatura alta",
+            DadosConversa {
+                temperature: Some(2.5),
+                ..valida()
+            },
+        ),
+        (
+            "temperatura negativa",
+            DadosConversa {
+                temperature: Some(-0.1),
+                ..valida()
+            },
+        ),
+        (
+            "contexto pequeno",
+            DadosConversa {
+                num_ctx: Some(100),
+                ..valida()
+            },
+        ),
+        (
+            "contexto enorme",
+            DadosConversa {
+                num_ctx: Some(10_000_000),
+                ..valida()
+            },
+        ),
+        (
+            "keep_alive ruim",
+            DadosConversa {
+                keep_alive: Some("muito".into()),
+                ..valida()
+            },
+        ),
+        (
+            "keep_alive sem número",
+            DadosConversa {
+                keep_alive: Some("m".into()),
+                ..valida()
+            },
+        ),
+        (
+            "keep_alive zero minutos",
+            DadosConversa {
+                keep_alive: Some("0m".into()),
+                ..valida()
+            },
+        ),
+    ];
+    for (descricao, dados) in casos {
+        let Err(erro) = banco.criar_conversa(&p.id, &dados) else {
+            panic!("deveria ser recusado: {descricao}");
+        };
+        assert!(matches!(erro, ErroBanco::Rejeitado(_)), "{descricao}");
+    }
+
+    // Valores nos limites e as opções da tela passam.
+    for keep_alive in ["-1", "0", "5m", "30m", "1h", "24h", "90s"] {
+        let dados = DadosConversa {
+            keep_alive: Some(keep_alive.into()),
+            ..valida()
+        };
+        assert!(banco.criar_conversa(&p.id, &dados).is_ok(), "{keep_alive}");
+    }
+    for temperatura in [0.0, 2.0] {
+        let dados = DadosConversa {
+            temperature: Some(temperatura),
+            ..valida()
+        };
+        assert!(banco.criar_conversa(&p.id, &dados).is_ok());
+    }
+    // Sem modelo e sem parâmetros também vale (os padrões do Ollama).
+    let vazia = DadosConversa {
+        modelo: None,
+        temperature: None,
+        num_ctx: None,
+        keep_alive: None,
+        ..valida()
+    };
+    assert!(banco.criar_conversa(&p.id, &vazia).is_ok());
+}
+
+#[test]
+fn uma_conversa_nova_nasce_com_os_valores_padrao_e_o_modelo_herdado() {
+    let banco = Banco::em_memoria().unwrap();
+    let p = banco
+        .criar_projeto(&dados_do_projeto("P", "", Some("qwen3:8b")))
+        .unwrap();
+
+    let conversa = banco.criar_conversa_nova(&p.id).unwrap();
+
+    assert_eq!(conversa.titulo, "Nova conversa");
+    assert_eq!(conversa.modelo.as_deref(), Some("qwen3:8b"));
+    assert_eq!(conversa.temperature, Some(0.7));
+    assert_eq!(conversa.num_ctx, Some(8192));
+    assert_eq!(conversa.keep_alive.as_deref(), Some("5m"));
+    assert_eq!(banco.contar_mensagens(&conversa.id).unwrap(), 0);
+    banco
+        .adicionar_mensagem(&conversa.id, Papel::Usuario, "x", None)
+        .unwrap();
+    assert_eq!(banco.contar_mensagens(&conversa.id).unwrap(), 1);
+    assert!(matches!(
+        banco.criar_conversa_nova(&novo_id()),
+        Err(ErroBanco::NaoEncontrado)
     ));
 }

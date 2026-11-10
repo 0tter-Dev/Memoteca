@@ -137,8 +137,10 @@ describe("Projetos: lista e detalhe", () => {
     const lista = await screen.findByRole("navigation", {
       name: "Lista de projetos",
     });
+    // Só os botões de projeto (os de conversa não têm `aria-expanded`).
     const nomes = within(lista)
       .getAllByRole("button")
+      .filter((b) => b.hasAttribute("aria-expanded"))
       .map((b) => b.textContent);
     expect(nomes).toEqual(["abacaxi", "Estudos", "Receitas"]);
     expect(
@@ -189,17 +191,31 @@ describe("Projetos: lista e detalhe", () => {
   });
 
   it("não existe caminho na interface para criar conversa fora de um projeto", async () => {
+    // Sem nenhum projeto, não há como criar conversa.
+    simularBackend();
+    renderizar();
+    await screen.findByText("Nenhum projeto ainda");
+    expect(screen.queryByText(/nova conversa/i)).not.toBeInTheDocument();
+  });
+
+  it("a nova conversa só existe dentro de um projeto", async () => {
     simularBackend([projeto({ nome: "A" })]);
     renderizar();
     await screen.findByRole("heading", { name: "A" });
 
-    // Nem com projetos, nem no formulário, nem sem projeto algum.
-    expect(screen.queryByText(/nova conversa/i)).not.toBeInTheDocument();
+    // Os botões de nova conversa ficam dentro do projeto: na lista dele e no detalhe.
+    const conversasDoProjeto = screen.getByRole("list", {
+      name: "Conversas de A",
+    });
     expect(
-      screen.queryByRole("button", { name: /conversa/i }),
-    ).not.toBeInTheDocument();
+      within(conversasDoProjeto).getByRole("button", { name: /Nova conversa/ }),
+    ).toBeVisible();
+    // Nada de "nova conversa" na lista de projetos fora de um projeto, nem no formulário.
     await clicar(botao("Novo projeto"));
-    expect(screen.queryByText(/nova conversa/i)).not.toBeInTheDocument();
+    const formulario = screen.getByRole("form", { name: "Novo projeto" });
+    expect(
+      within(formulario).queryByRole("button", { name: /conversa/i }),
+    ).not.toBeInTheDocument();
   });
 });
 

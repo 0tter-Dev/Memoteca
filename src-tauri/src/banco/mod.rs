@@ -19,8 +19,8 @@ use rusqlite::Connection;
 
 pub use erro::ErroBanco;
 pub use modelos::{
-    Conversa, DadosConversa, DadosProjeto, EscopoMemoria, Memoria, Mensagem, Papel, Projeto,
-    ResumoExclusaoProjeto,
+    Conversa, DadosConversa, DadosProjeto, EscopoMemoria, EstadoMensagem, Memoria, Mensagem, Papel,
+    Projeto, ResumoExclusaoProjeto,
 };
 
 use migracoes::{MIGRACOES, Migracao};

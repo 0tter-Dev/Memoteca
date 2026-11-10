@@ -7,7 +7,7 @@ use std::fmt;
 
 use rusqlite::ErrorCode;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErroBanco {
     /// Não foi possível abrir ou usar o arquivo (travado, protegido, danificado).
     Indisponivel(String),

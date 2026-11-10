@@ -7,8 +7,9 @@ use super::Banco;
 use super::erro::ErroBanco;
 use super::id::novo_id;
 use super::modelos::{
-    Conversa, DadosConversa, DadosProjeto, EscopoMemoria, Memoria, Mensagem, Papel, Projeto,
-    ResumoExclusaoProjeto,
+    Conversa, DadosConversa, DadosProjeto, EscopoMemoria, EstadoMensagem, KEEP_ALIVE_PADRAO,
+    Memoria, Mensagem, NUM_CTX_PADRAO, Papel, Projeto, ResumoExclusaoProjeto, TEMPERATURE_PADRAO,
+    TITULO_PADRAO_DA_CONVERSA,
 };
 use crate::modelos::NomeDeModelo;
 
@@ -18,6 +19,85 @@ type Resultado<T> = Result<T, ErroBanco>;
 pub const NOME_DO_PROJETO_MAXIMO: usize = 100;
 /// Tamanho máximo das instruções (system prompt) de um projeto, em caracteres.
 pub const INSTRUCOES_DO_PROJETO_MAXIMO: usize = 20_000;
+
+/// Tamanho máximo do título de uma conversa, em caracteres.
+pub const TITULO_DA_CONVERSA_MAXIMO: usize = 100;
+/// Limites da temperatura e do contexto (`num_ctx`) de uma conversa.
+pub const TEMPERATURA_MINIMA: f64 = 0.0;
+pub const TEMPERATURA_MAXIMA: f64 = 2.0;
+pub const NUM_CTX_MINIMO: i64 = 512;
+pub const NUM_CTX_MAXIMO: i64 = 4_194_304;
+
+/// `keep_alive` válido: `-1` (manter carregado), `0` (descarregar logo) ou um número seguido
+/// de `s`, `m` ou `h` (por exemplo `5m` ou `24h`).
+pub fn keep_alive_valido(texto: &str) -> bool {
+    if texto == "-1" || texto == "0" {
+        return true;
+    }
+    let Some(unidade) = texto.chars().last() else {
+        return false;
+    };
+    let numero = &texto[..texto.len() - unidade.len_utf8()];
+    matches!(unidade, 's' | 'm' | 'h')
+        && !numero.is_empty()
+        && numero.len() <= 5
+        && numero.chars().all(|c| c.is_ascii_digit())
+        && numero.parse::<u32>().is_ok_and(|n| n > 0)
+}
+
+/// Confere e normaliza os dados de uma conversa: título obrigatório, modelo com nome válido e
+/// parâmetros dentro dos limites.
+fn validar_conversa(dados: &DadosConversa) -> Resultado<DadosConversa> {
+    let titulo = dados.titulo.trim();
+    if titulo.is_empty() {
+        return Err(ErroBanco::Rejeitado("Dê um título à conversa.".to_owned()));
+    }
+    if titulo.chars().count() > TITULO_DA_CONVERSA_MAXIMO {
+        return Err(ErroBanco::Rejeitado(format!(
+            "O título da conversa pode ter no máximo {TITULO_DA_CONVERSA_MAXIMO} caracteres."
+        )));
+    }
+
+    let modelo = match dados.modelo.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(modelo) => {
+            NomeDeModelo::validar(modelo)
+                .map_err(|erro| ErroBanco::Rejeitado(erro.mensagem_amigavel()))?;
+            Some(modelo.to_owned())
+        }
+    };
+    if let Some(temperatura) = dados.temperature
+        && !(TEMPERATURA_MINIMA..=TEMPERATURA_MAXIMA).contains(&temperatura)
+    {
+        return Err(ErroBanco::Rejeitado(
+            "A temperatura precisa estar entre 0 e 2.".to_owned(),
+        ));
+    }
+    if let Some(contexto) = dados.num_ctx
+        && !(NUM_CTX_MINIMO..=NUM_CTX_MAXIMO).contains(&contexto)
+    {
+        return Err(ErroBanco::Rejeitado(format!(
+            "O tamanho do contexto precisa estar entre {NUM_CTX_MINIMO} e {NUM_CTX_MAXIMO}."
+        )));
+    }
+    let keep_alive = match dados.keep_alive.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(valor) if keep_alive_valido(valor) => Some(valor.to_owned()),
+        Some(_) => {
+            return Err(ErroBanco::Rejeitado(
+                "O tempo para manter o modelo na memória não é válido.".to_owned(),
+            ));
+        }
+    };
+
+    Ok(DadosConversa {
+        titulo: titulo.to_owned(),
+        modelo,
+        temperature: dados.temperature,
+        num_ctx: dados.num_ctx,
+        keep_alive,
+    })
+}
 
 /// Confere e normaliza os dados de um projeto: o nome é obrigatório (sem espaços nas pontas),
 /// os textos têm tamanho máximo e o modelo padrão, se houver, precisa ser um nome válido.
@@ -87,6 +167,7 @@ fn conversa_da_linha(linha: &Row<'_>) -> rusqlite::Result<Conversa> {
 
 fn mensagem_da_linha(linha: &Row<'_>) -> rusqlite::Result<Mensagem> {
     let papel: String = linha.get("papel")?;
+    let estado: String = linha.get("estado")?;
     Ok(Mensagem {
         id: linha.get("id")?,
         conversa_id: linha.get("conversa_id")?,
@@ -95,6 +176,8 @@ fn mensagem_da_linha(linha: &Row<'_>) -> rusqlite::Result<Mensagem> {
             .ok_or_else(|| rusqlite::Error::InvalidColumnType(0, "papel".into(), Type::Text))?,
         conteudo: linha.get("conteudo")?,
         raciocinio: linha.get("raciocinio")?,
+        estado: EstadoMensagem::de_texto(&estado)
+            .ok_or_else(|| rusqlite::Error::InvalidColumnType(0, "estado".into(), Type::Text))?,
         criado_em: linha.get("criado_em")?,
         atualizado_em: linha.get("atualizado_em")?,
     })
@@ -271,7 +354,47 @@ impl Banco {
 
     // ----- Conversas -----
 
+    /// Cria uma conversa nova **dentro de um projeto**, com os valores padrão: título
+    /// "Nova conversa", modelo herdado do projeto e os parâmetros padrão (temperatura 0,7,
+    /// contexto 8192 e manter na memória por 5 minutos).
+    pub fn criar_conversa_nova(&self, projeto_id: &str) -> Resultado<Conversa> {
+        let modelo = self.modelo_herdado_pelo_projeto(projeto_id)?;
+        self.criar_conversa(
+            projeto_id,
+            &DadosConversa {
+                titulo: TITULO_PADRAO_DA_CONVERSA.to_owned(),
+                modelo,
+                temperature: Some(TEMPERATURE_PADRAO),
+                num_ctx: Some(NUM_CTX_PADRAO),
+                keep_alive: Some(KEEP_ALIVE_PADRAO.to_owned()),
+            },
+        )
+    }
+
+    /// Marca a conversa como mexida agora, para subir na lista.
+    pub fn tocar_conversa(&self, id: &str) -> Resultado<()> {
+        let alteradas = self.conexao.execute(
+            &format!("UPDATE conversas SET atualizado_em = {AGORA} WHERE id = ?1"),
+            [id],
+        )?;
+        if alteradas == 0 {
+            return Err(ErroBanco::NaoEncontrado);
+        }
+        Ok(())
+    }
+
+    /// Quantas mensagens serão apagadas junto com a conversa.
+    pub fn contar_mensagens(&self, conversa_id: &str) -> Resultado<u64> {
+        self.obter_conversa(conversa_id)?;
+        Ok(contagem(self.conexao.query_row(
+            "SELECT COUNT(*) FROM mensagens WHERE conversa_id = ?1",
+            [conversa_id],
+            |linha| linha.get(0),
+        )?))
+    }
+
     pub fn criar_conversa(&self, projeto_id: &str, dados: &DadosConversa) -> Resultado<Conversa> {
+        let dados = validar_conversa(dados)?;
         let id = novo_id();
         self.conexao.execute(
             "INSERT INTO conversas
@@ -299,9 +422,9 @@ impl Banco {
     }
 
     pub fn listar_conversas_do_projeto(&self, projeto_id: &str) -> Resultado<Vec<Conversa>> {
-        let mut consulta = self
-            .conexao
-            .prepare("SELECT * FROM conversas WHERE projeto_id = ?1 ORDER BY criado_em, id")?;
+        let mut consulta = self.conexao.prepare(
+            "SELECT * FROM conversas WHERE projeto_id = ?1 ORDER BY atualizado_em DESC, id DESC",
+        )?;
         let conversas = consulta
             .query_map([projeto_id], conversa_da_linha)?
             .collect::<Result<Vec<_>, _>>()?;
@@ -309,6 +432,7 @@ impl Banco {
     }
 
     pub fn atualizar_conversa(&self, id: &str, dados: &DadosConversa) -> Resultado<Conversa> {
+        let dados = validar_conversa(dados)?;
         let alteradas = self.conexao.execute(
             &format!(
                 "UPDATE conversas
@@ -352,15 +476,40 @@ impl Banco {
         conteudo: &str,
         raciocinio: Option<&str>,
     ) -> Resultado<Mensagem> {
+        self.adicionar_mensagem_com_estado(
+            conversa_id,
+            papel,
+            conteudo,
+            raciocinio,
+            EstadoMensagem::Completa,
+        )
+    }
+
+    /// Como `adicionar_mensagem`, dizendo se a mensagem está completa ou foi interrompida.
+    pub fn adicionar_mensagem_com_estado(
+        &self,
+        conversa_id: &str,
+        papel: Papel,
+        conteudo: &str,
+        raciocinio: Option<&str>,
+        estado: EstadoMensagem,
+    ) -> Resultado<Mensagem> {
         let id = novo_id();
         self.conexao.execute(
-            "INSERT INTO mensagens (id, conversa_id, posicao, papel, conteudo, raciocinio)
+            "INSERT INTO mensagens (id, conversa_id, posicao, papel, conteudo, raciocinio, estado)
              VALUES (
                  ?1, ?2,
                  (SELECT COALESCE(MAX(posicao), 0) + 1 FROM mensagens WHERE conversa_id = ?2),
-                 ?3, ?4, ?5
+                 ?3, ?4, ?5, ?6
              )",
-            params![id, conversa_id, papel.como_texto(), conteudo, raciocinio],
+            params![
+                id,
+                conversa_id,
+                papel.como_texto(),
+                conteudo,
+                raciocinio,
+                estado.como_texto()
+            ],
         )?;
         self.obter_mensagem(&id)
     }
@@ -392,13 +541,24 @@ impl Banco {
         conteudo: &str,
         raciocinio: Option<&str>,
     ) -> Resultado<Mensagem> {
+        self.substituir_mensagem_com_estado(id, conteudo, raciocinio, EstadoMensagem::Completa)
+    }
+
+    /// Como `substituir_mensagem`, dizendo se a nova versão está completa ou interrompida.
+    pub fn substituir_mensagem_com_estado(
+        &self,
+        id: &str,
+        conteudo: &str,
+        raciocinio: Option<&str>,
+        estado: EstadoMensagem,
+    ) -> Resultado<Mensagem> {
         let alteradas = self.conexao.execute(
             &format!(
                 "UPDATE mensagens
-                 SET conteudo = ?2, raciocinio = ?3, atualizado_em = {AGORA}
+                 SET conteudo = ?2, raciocinio = ?3, estado = ?4, atualizado_em = {AGORA}
                  WHERE id = ?1"
             ),
-            params![id, conteudo, raciocinio],
+            params![id, conteudo, raciocinio, estado.como_texto()],
         )?;
         if alteradas == 0 {
             return Err(ErroBanco::NaoEncontrado);

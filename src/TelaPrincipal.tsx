@@ -1,8 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useConversas } from "./estado/conversas";
 import { useProjetos } from "./estado/projetos";
+import TelaDaConversa from "./TelaDaConversa";
 import FormularioDeProjeto from "./FormularioDeProjeto";
 import Sidebar from "./Sidebar";
-import type { EstadoOllama, Projeto } from "./tipos";
+import type { Conversa, EstadoOllama, Projeto } from "./tipos";
 
 interface Props {
   ollama: EstadoOllama;
@@ -10,8 +12,21 @@ interface Props {
   erroDeDados: string | null;
 }
 
+/** Lista vazia constante: um seletor do Zustand não pode devolver um array novo a cada leitura. */
+const SEM_CONVERSAS: Conversa[] = [];
+
 function DetalheDoProjeto({ projeto }: { projeto: Projeto }) {
   const iniciarEdicao = useProjetos((estado) => estado.iniciarEdicao);
+  const criarConversa = useConversas((estado) => estado.criarConversa);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function novaConversa() {
+    setErro(null);
+    const falha = await criarConversa(projeto.id);
+    if (falha) {
+      setErro(falha);
+    }
+  }
 
   return (
     <article aria-label="Projeto" className="max-w-2xl space-y-4">
@@ -45,9 +60,23 @@ function DetalheDoProjeto({ projeto }: { projeto: Projeto }) {
         </p>
       </section>
 
-      <p className="text-neutral-600 dark:text-neutral-400">
-        As conversas deste projeto aparecerão aqui em breve.
-      </p>
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={() => void novaConversa()}
+          className="rounded bg-blue-700 px-3 py-1 text-white"
+        >
+          Nova conversa
+        </button>
+        <p className="text-neutral-600 dark:text-neutral-400">
+          As conversas do projeto aparecem na lateral.
+        </p>
+        {erro && (
+          <p role="alert" className="erro">
+            {erro}
+          </p>
+        )}
+      </div>
     </article>
   );
 }
@@ -69,6 +98,14 @@ function TelaPrincipal({ ollama, erroDeDados }: Props) {
   }, [carregar]);
 
   const selecionado = projetos.find((p) => p.id === selecionadoId) ?? null;
+  const ativaId = useConversas((estado) => estado.ativaId);
+  const conversasDoProjeto = useConversas((estado) =>
+    selecionadoId
+      ? (estado.conversasPorProjeto[selecionadoId] ?? SEM_CONVERSAS)
+      : SEM_CONVERSAS,
+  );
+  const conversaAtiva =
+    conversasDoProjeto.find((c) => c.id === ativaId) ?? null;
 
   let conteudo: React.ReactNode;
   if (erro) {
@@ -81,6 +118,10 @@ function TelaPrincipal({ ollama, erroDeDados }: Props) {
     conteudo = <p role="status">Carregando os projetos…</p>;
   } else if (modo === "novo") {
     conteudo = <FormularioDeProjeto key="novo" projeto={null} />;
+  } else if (modo === "ver" && conversaAtiva) {
+    conteudo = (
+      <TelaDaConversa key={conversaAtiva.id} conversa={conversaAtiva} />
+    );
   } else if (modo === "editar" && selecionado) {
     conteudo = (
       <FormularioDeProjeto key={selecionado.id} projeto={selecionado} />

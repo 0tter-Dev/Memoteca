@@ -30,7 +30,8 @@ pub struct ResumoExclusaoProjeto {
     pub memorias: u64,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Conversa {
     pub id: String,
     pub projeto_id: String,
@@ -43,9 +44,16 @@ pub struct Conversa {
     pub atualizado_em: String,
 }
 
-/// Campos editáveis de uma conversa. Os valores padrão de modelo e parâmetros são
-/// definidos na E10, então aqui todos podem ficar vazios.
-#[derive(Debug, Clone, PartialEq)]
+/// Título de uma conversa recém-criada, até a primeira mensagem do usuário dar o título.
+pub const TITULO_PADRAO_DA_CONVERSA: &str = "Nova conversa";
+/// Parâmetros de uma conversa nova (decididos na E10). Cada conversa guarda os seus.
+pub const TEMPERATURE_PADRAO: f64 = 0.7;
+pub const NUM_CTX_PADRAO: i64 = 8192;
+pub const KEEP_ALIVE_PADRAO: &str = "5m";
+
+/// Campos editáveis de uma conversa. Modelo e parâmetros podem ficar vazios (sem valor).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DadosConversa {
     pub titulo: String,
     pub modelo: Option<String>,
@@ -54,10 +62,37 @@ pub struct DadosConversa {
     pub keep_alive: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum Papel {
+    #[serde(rename = "user")]
     Usuario,
+    #[serde(rename = "assistant")]
     Assistente,
+}
+
+/// A mensagem está inteira ou foi guardada pela metade (resposta interrompida).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EstadoMensagem {
+    Completa,
+    Interrompida,
+}
+
+impl EstadoMensagem {
+    pub fn como_texto(self) -> &'static str {
+        match self {
+            Self::Completa => "completa",
+            Self::Interrompida => "interrompida",
+        }
+    }
+
+    pub fn de_texto(texto: &str) -> Option<Self> {
+        match texto {
+            "completa" => Some(Self::Completa),
+            "interrompida" => Some(Self::Interrompida),
+            _ => None,
+        }
+    }
 }
 
 impl Papel {
@@ -77,7 +112,8 @@ impl Papel {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Mensagem {
     pub id: String,
     pub conversa_id: String,
@@ -87,6 +123,8 @@ pub struct Mensagem {
     pub conteudo: String,
     /// Raciocínio (`thinking`) do modelo, quando houver.
     pub raciocinio: Option<String>,
+    /// `Interrompida` quando a resposta foi guardada pela metade.
+    pub estado: EstadoMensagem,
     pub criado_em: String,
     pub atualizado_em: String,
 }
