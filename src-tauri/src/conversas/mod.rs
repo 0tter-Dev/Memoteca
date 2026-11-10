@@ -4,6 +4,7 @@
 pub mod contexto;
 pub mod controle;
 pub mod geracao;
+pub mod sugestoes;
 pub mod titulo;
 
 use std::sync::Mutex;
@@ -14,6 +15,7 @@ use crate::banco::{Banco, DadosConversa, ErroBanco, Mensagem, Papel};
 pub use contexto::AvisoDeContexto;
 pub use controle::{ControleDeGeracao, VagaDeGeracao};
 pub use geracao::{DesfechoDaGeracao, ErroGeracao, FalhaDeGeracao, ModoDeGeracao, gerar};
+pub use sugestoes::{DesfechoDaSugestao, ErroSugestao, SugestaoDeMemoria, sugerir};
 pub use titulo::titulo_da_mensagem;
 
 /// Tamanho máximo de uma mensagem do usuário, em caracteres.

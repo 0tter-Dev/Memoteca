@@ -151,6 +151,42 @@ impl PedidoChat {
     }
 }
 
+/// Pedido de chat sem streaming, com a resposta restrita a um esquema JSON (`format`).
+/// Serve para tarefas curtas em que o app precisa de uma resposta estruturada, como as
+/// sugestões de memória. `think` vai como `false`: a tarefa não precisa de raciocínio, e
+/// assim um modelo que raciocina não gasta o tempo todo pensando antes de responder.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PedidoEstruturado {
+    pub modelo: String,
+    pub mensagens: Vec<MensagemPedido>,
+    /// JSON Schema da resposta.
+    pub esquema: Value,
+    pub temperature: Option<f64>,
+    pub num_ctx: Option<u32>,
+    pub keep_alive: Option<KeepAlive>,
+}
+
+impl PedidoEstruturado {
+    pub fn para_json(&self) -> Value {
+        // Reaproveita o corpo do chat comum e troca o que muda: sem stream, com `format` e
+        // com `think: false`.
+        let base = PedidoChat {
+            modelo: self.modelo.clone(),
+            mensagens: self.mensagens.clone(),
+            temperature: self.temperature,
+            num_ctx: self.num_ctx,
+            keep_alive: self.keep_alive.clone(),
+        };
+        let mut corpo = base.para_json();
+        if let Value::Object(mapa) = &mut corpo {
+            mapa.insert("stream".into(), json!(false));
+            mapa.insert("format".into(), self.esquema.clone());
+            mapa.insert("think".into(), json!(false));
+        }
+        corpo
+    }
+}
+
 /// Um pedaço de resposta, na ordem em que chegou. O raciocínio vem antes do conteúdo.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PedacoChat {
@@ -282,6 +318,31 @@ mod testes {
             num_ctx: Some(8192),
             keep_alive: Some(KeepAlive::Duracao("30m".into())),
         }
+    }
+
+    #[test]
+    fn o_corpo_estruturado_nao_tem_stream_leva_o_esquema_e_desliga_o_raciocinio() {
+        let esquema = json!({ "type": "object" });
+        let estruturado = PedidoEstruturado {
+            modelo: "qwen3:8b".into(),
+            mensagens: pedido().mensagens,
+            esquema: esquema.clone(),
+            temperature: Some(0.2),
+            num_ctx: Some(4096),
+            keep_alive: None,
+        };
+
+        let corpo = estruturado.para_json();
+
+        assert_eq!(corpo["stream"], false);
+        assert_eq!(corpo["format"], esquema);
+        assert_eq!(corpo["think"], false);
+        assert_eq!(corpo["options"]["temperature"], 0.2);
+        assert_eq!(corpo["options"]["num_ctx"], 4096);
+        assert!(corpo.get("keep_alive").is_none());
+        // As mensagens continuam só com `role` e `content`.
+        let primeira = corpo["messages"][0].as_object().unwrap();
+        assert_eq!(primeira.len(), 2);
     }
 
     #[test]

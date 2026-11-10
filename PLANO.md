@@ -25,8 +25,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E08 | Onboarding e catálogo de modelos | E07 | concluída |
 | E09 | Projetos | E03, E04 | concluída |
 | E10 | Conversas e chat com streaming | E05, E09 | concluída |
-| E11 | Memória manual (projeto e global) e injeção | E10 | em revisão |
-| E12 | Sugestão de memórias sob demanda | E11 | pendente |
+| E11 | Memória manual (projeto e global) e injeção | E10 | concluída |
+| E12 | Sugestão de memórias sob demanda | E11 | em revisão |
 | E13 | Exportar e importar | E04, E11 | pendente |
 | E14 | Robustez transversal: erros amigáveis e recuperação | E07, E08, E10, E13 | pendente |
 | E15 | Testes funcionais ponta a ponta do MVP | E14 | pendente |
@@ -501,7 +501,17 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - Resposta do modelo malformada ou vazia mostra mensagem amigável e não cria memória. **(falha)**
 - A chamada extra não altera nem acrescenta mensagens ao histórico da conversa.
 
-**Decisões a tomar:** qual modelo gera as sugestões e se o escopo (projeto ou global) é escolhido na aprovação.
+**Decisões a tomar:** qual modelo gera as sugestões e se o escopo (projeto ou global) é escolhido na aprovação. _Decididas com o usuário, ver o Registro de decisões._
+
+**Como ficou (E12):**
+
+- **Nada é criado pelo backend.** O comando `sugerir_memorias` só devolve uma lista de textos: não grava memória nem mensagem. Cada sugestão vira memória apenas quando o usuário a aprova na tela, pelo mesmo comando `criar_memoria` das memórias manuais (uma sugestão aprovada, uma memória). Rejeitar, ou fechar o diálogo sem decidir, não passa pelo backend e não cria nada. A chamada extra não toca no histórico da conversa nem na própria conversa.
+- **A chamada:** `POST /api/chat` com `stream: false`, `format` (JSON Schema `{"sugestoes":[{"texto":"..."}]}`, no máximo 5 itens), `think: false` e `temperature` 0,2. Usa o **modelo da própria conversa**, o `num_ctx` e o `keep_alive` dela (o `num_ctx` limitado à janela do modelo, como no chat). O pedido tem uma instrução em português e a conversa em texto corrido (só o trecho mais recente, até 12.000 caracteres, sem o raciocínio). As memórias que já existem (globais e do projeto) vão na instrução com "não repita".
+- **Validação da resposta (R31):** o conteúdo precisa ser um JSON no esquema. Resposta vazia, que não é JSON ou fora do esquema vira `RespostaInvalida`, com a mensagem amigável "O modelo não devolveu as sugestões num formato que o Memoteca entenda. Nenhuma memória foi criada…" e botão "Tentar de novo". **Uma lista vazia não é erro**: a tela diz que o modelo não achou nada que valha a pena guardar. Textos em branco, maiores que o limite de uma memória (2.000 caracteres) e repetidos (entre si ou iguais a uma memória existente, sem diferenciar maiúsculas) são descartados.
+- **Cancelar:** a chamada usa a mesma "vaga" da geração de respostas (`ControleDeGeracao`), então não roda junto com uma resposta. Fechar o diálogo enquanto o modelo responde cancela a chamada e fecha a conexão com o Ollama, e uma resposta que chegue tarde é descartada. O tempo máximo é o `ociosidade_chat` (120 s), que aqui vale como tempo total porque nenhum byte chega antes de a resposta ficar pronta.
+- **Interface (T07):** botão "Sugerir memórias" no cabeçalho da conversa (desabilitado sem mensagens ou durante uma resposta). Abre um diálogo (`role="dialog"`, Esc fecha) com "Analisando a conversa…" e "Cancelar", depois a lista. Cada sugestão tem a escolha "Deste projeto" (padrão) ou "Global", e os botões "Aprovar" e "Rejeitar". Se a aprovação falha, a sugestão continua na lista com a mensagem. Enquanto o diálogo está aberto, o envio de mensagens fica travado.
+- **Sem migração nova e sem dependência nova.**
+- **Limitação conhecida:** a conferência de repetidas é por texto igual. Na validação real, com um modelo de 1 bilhão de parâmetros, uma memória já guardada voltou numa segunda rodada reescrita com outras palavras ("Marina mora no Recife." no lugar de "O usuário mora no Recife."), e o modelo ignorou o "não repita". O usuário vê a sugestão e rejeita. Modelos maiores tendem a seguir melhor a instrução.
 
 ### E13 — Exportar e importar
 
@@ -621,6 +631,9 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Ordem do contexto montado (E11) | Uma única mensagem `system`, sempre a primeira: instruções do projeto, depois memórias globais, depois memórias do projeto (o mais específico por último, onde o modelo dá mais peso). Cada bloco tem título em português e as memórias vão em lista. Bloco vazio é omitido | 2026-11-09 |
 | Contexto perto do `num_ctx` (E11) | Só avisar: estimativa por caracteres, aviso a partir de 80% do `num_ctx`, sem cortar histórico nem bloquear o envio. O Ollama já descarta as mensagens mais antigas sozinho, e instruções e memórias seguem em todo envio. Cortar ou bloquear ficaria para depois, se o aviso se mostrar pouco | 2026-11-09 |
 | Tamanho e remoção de memórias (E11) | Máximo de 2.000 caracteres por memória (são fatos curtos que entram em todo envio). Remover apaga na hora, sem confirmação, porque o plano pede remoção silenciosa e a memória é um texto curto fácil de recriar | 2026-11-09 |
+| Modelo das sugestões de memória (E12) | O da própria conversa (já carregado na memória, sem configuração nova). Se for pequeno demais, as sugestões podem ser fracas, e o usuário aprova ou rejeita cada uma | 2026-11-10 |
+| Escopo das sugestões de memória (E12) | O usuário escolhe ao aprovar, com "Deste projeto" como padrão. O modelo não decide escopo, então nenhuma sugestão vira global por palpite dele | 2026-11-10 |
+| Chamada das sugestões (E12) | `format` com JSON Schema e `think: false` (só nesta chamada; o chat continua sem `think`), temperatura 0,2, até 5 sugestões, conversa limitada a 12.000 caracteres recentes. Lista vazia do modelo não é erro. Comportamento de `format` e `think: false` conferido no Ollama 0.32.9 (ver o contrato) | 2026-11-10 |
 | Dependências do chat (E10) | `react-markdown`, `remark-gfm` e `rehype-highlight`, todas já decididas na E03. O realce de código usa cores próprias (CSS), sem importar tema do `highlight.js`. Avisado no PR da E10 | 2026-11-09 |
 | Regras de validação do projeto | Nome obrigatório, com até 100 caracteres (contados como caracteres, e não bytes); instruções opcionais, com até 20.000 caracteres; nomes de projeto repetidos são permitidos; lista em ordem alfabética sem diferenciar maiúsculas. Os limites são defesa contra textos absurdos e podem mudar | 2026-11-09 |
 | Modelo herdado pelas conversas | Vale o modelo padrão do projeto; sem ele, o da primeira conversa criada no projeto que tenha modelo; sem nenhum, a tela pede a escolha. A conversa não grava o padrão: a regra é calculada a cada nova conversa | 2026-11-09 |
@@ -642,7 +655,6 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Decisão | Etapa que a resolve |
 | --- | --- |
 | Confirmar a versão mínima do Ollama (0.30.0) contra um Ollama real dessa versão. Na E06 só havia a 0.32.9 para testar | E15 (checklist manual) |
-| Modelo e escopo das sugestões de memória | E12 |
 | Formato do export e política de importação | E13 |
 | Formato do instalador, assinatura de código, dados na desinstalação | E16 |
 | Identidade visual (logo e paleta). Opcional, a discutir quando o usuário quiser, com a skill `project-identity`. Direção inicial: marca geométrica de "prateleiras e um ponto". Os ícones atuais são os padrões do Tauri e são provisórios | Antes de E16 |
@@ -741,7 +753,7 @@ Stream de resposta:
 - O stream acaba na linha com `done: true`. `done_reason: "length"` indica resposta cortada por limite de tamanho, e a UI avisa. **(a validar na E05.)**
 - Sem nenhuma linha com `thinking`, não existe seção de raciocínio, e isso não é erro.
 
-Sugestões de memória (E12): `POST /api/chat` com `"stream": false`, `format` com um JSON Schema da lista de sugestões e a conversa mais a instrução como `messages`. A resposta é lida de `message.content` e validada. Qualquer coisa fora do esquema é erro `RespostaInvalida`. **(a validar na E12: comportamento de `format` e de `think: false` em modelos com e sem raciocínio.)**
+Sugestões de memória (E12): `POST /api/chat` com `"stream": false`, `format` com um JSON Schema da lista de sugestões e a conversa mais a instrução como `messages`. A resposta é lida de `message.content` e validada. Qualquer coisa fora do esquema é erro `RespostaInvalida`. **Confirmado na E12 com o Ollama 0.32.9**, em `qwen3:0.6b` (com raciocínio) e `gemma3:1b` (sem raciocínio): `format` é respeitado nos dois, e `message.content` é sempre um JSON no esquema. Sem `think`, o modelo com raciocínio devolve o `thinking` separado do `content` (que continua válido). `think: false` é aceito por **ambos**, sem erro no modelo que não raciocina, e dispensa o raciocínio no que tem. Por isso a chamada das sugestões envia `think: false`.
 
 #### Erros
 
@@ -892,7 +904,7 @@ Diálogo aberto pelo botão da T04. Ver o fluxo F6.
 | Elemento ou ação | Endpoint ou operação | Etapa |
 | --- | --- | --- |
 | Gerar sugestões | `POST /api/chat` (`stream: false`, `format`) | E12 |
-| Escolher o escopo de cada sugestão | A definir na E12 | E12 |
+| Escolher o escopo de cada sugestão ("Deste projeto", padrão, ou "Global") | Local | E12 |
 | Aprovar uma sugestão | Local: criar exatamente uma memória | E12 |
 | Rejeitar uma sugestão, ou fechar sem decidir | Nada é criado | E12 |
 
