@@ -17,7 +17,7 @@ use crate::ollama::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::contexto::montar_contexto;
+use super::contexto::{AvisoDeContexto, avaliar_contexto, montar_contexto};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModoDeGeracao {
@@ -102,13 +102,18 @@ impl From<ErroGeracao> for FalhaDeGeracao {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DesfechoDaGeracao {
-    /// A resposta terminou e foi gravada. \`cortada\`: o modelo parou por limite de tamanho.
-    Concluida { mensagem: Mensagem, cortada: bool },
-    /// O usuário cancelou. \`mensagem\` traz o que já tinha chegado, gravado como interrompido.
+    /// A resposta terminou e foi gravada. `cortada`: o modelo parou por limite de tamanho.
+    /// `contexto`: o contexto enviado estava perto do `num_ctx` (ou além dele).
+    Concluida {
+        mensagem: Mensagem,
+        cortada: bool,
+        contexto: Option<AvisoDeContexto>,
+    },
+    /// O usuário cancelou. `mensagem` traz o que já tinha chegado, gravado como interrompido.
     Cancelada { mensagem: Option<Mensagem> },
 }
 
-/// Roda uma operação no banco, sem segurar o bloqueio entre um \`await\` e outro.
+/// Roda uma operação no banco, sem segurar o bloqueio entre um `await` e outro.
 fn com_banco<T>(
     banco: &Mutex<Banco>,
     operacao: impl FnOnce(&Banco) -> Result<T, ErroBanco>,
@@ -131,7 +136,7 @@ fn texto_ou_nada(texto: String) -> Option<String> {
     (!texto.is_empty()).then_some(texto)
 }
 
-/// Gera a resposta da conversa. \`ao_pedaco\` recebe, na ordem, o raciocínio e o conteúdo que
+/// Gera a resposta da conversa. `ao_pedaco` recebe, na ordem, o raciocínio e o conteúdo que
 /// chegam do modelo.
 pub async fn gerar(
     banco: &Mutex<Banco>,
@@ -141,12 +146,21 @@ pub async fn gerar(
     cancelamento: &CancellationToken,
     ao_pedaco: &mut (dyn FnMut(PedacoChat) + Send),
 ) -> Result<DesfechoDaGeracao, FalhaDeGeracao> {
-    // 1. O que precisa ser lido do banco, de uma vez.
-    let (conversa, instrucoes, mensagens) = com_banco(banco, |b| {
+    // 1. O que precisa ser lido do banco, de uma vez. As memórias são lidas a cada envio: uma
+    // memória editada ou excluída só vale para esta geração em diante.
+    let (conversa, instrucoes, globais, do_projeto, mensagens) = com_banco(banco, |b| {
         let conversa = b.obter_conversa(conversa_id)?;
         let projeto = b.obter_projeto(&conversa.projeto_id)?;
+        let globais = b.listar_memorias_globais()?;
+        let do_projeto = b.listar_memorias_do_projeto(&conversa.projeto_id)?;
         let mensagens = b.listar_mensagens(conversa_id)?;
-        Ok((conversa, projeto.system_prompt, mensagens))
+        Ok((
+            conversa,
+            projeto.system_prompt,
+            globais,
+            do_projeto,
+            mensagens,
+        ))
     })
     .map_err(ErroGeracao::from)?;
 
@@ -192,9 +206,12 @@ pub async fn gerar(
         u32::try_from(limitado).unwrap_or(u32::MAX)
     });
 
+    let contexto = montar_contexto(&instrucoes, &globais, &do_projeto, historico);
+    let aviso_de_contexto = num_ctx.and_then(|num_ctx| avaliar_contexto(&contexto, num_ctx));
+
     let pedido = PedidoChat {
         modelo,
-        mensagens: montar_contexto(&instrucoes, historico),
+        mensagens: contexto,
         temperature: conversa.temperature,
         num_ctx,
         keep_alive: conversa.keep_alive.as_deref().map(keep_alive_do_ollama),
@@ -242,6 +259,7 @@ pub async fn gerar(
                     Ok(DesfechoDaGeracao::Concluida {
                         mensagem,
                         cortada: resposta.foi_cortada(),
+                        contexto: aviso_de_contexto,
                     })
                 }
                 MotivoFim::Cancelada => {

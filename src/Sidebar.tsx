@@ -15,7 +15,14 @@ const BOTAO =
  * só existe **dentro de um projeto**: toda conversa pertence a exatamente um projeto.
  */
 function Sidebar({ ollama }: Props) {
-  const { projetos, selecionadoId, selecionar, iniciarNovo } = useProjetos();
+  const {
+    projetos,
+    selecionadoId,
+    modo,
+    selecionar,
+    iniciarNovo,
+    abrirMemorias,
+  } = useProjetos();
   const {
     conversasPorProjeto,
     ativaId,
@@ -26,6 +33,7 @@ function Sidebar({ ollama }: Props) {
     fecharConversa,
   } = useConversas();
   const [erro, setErro] = useState<string | null>(null);
+  const naTelaDeMemorias = modo === "memorias";
 
   // As conversas do projeto aberto.
   useEffect(() => {
@@ -36,6 +44,7 @@ function Sidebar({ ollama }: Props) {
 
   async function novaConversa(projetoId: string) {
     setErro(null);
+    selecionar(projetoId);
     const falha = await criarConversa(projetoId);
     if (falha) {
       setErro(falha);
@@ -78,7 +87,11 @@ function Sidebar({ ollama }: Props) {
                     selecionar(projeto.id);
                     fecharConversa();
                   }}
-                  aria-current={aberto && ativaId === null ? "true" : undefined}
+                  aria-current={
+                    aberto && ativaId === null && !naTelaDeMemorias
+                      ? "true"
+                      : undefined
+                  }
                   aria-expanded={aberto}
                   className={BOTAO}
                 >
@@ -94,9 +107,14 @@ function Sidebar({ ollama }: Props) {
                         <button
                           type="button"
                           disabled={gerando}
-                          onClick={() => void abrirConversa(conversa.id)}
+                          onClick={() => {
+                            selecionar(projeto.id);
+                            void abrirConversa(conversa.id);
+                          }}
                           aria-current={
-                            conversa.id === ativaId ? "true" : undefined
+                            conversa.id === ativaId && !naTelaDeMemorias
+                              ? "true"
+                              : undefined
                           }
                           title={conversa.titulo}
                           className={BOTAO}
@@ -127,6 +145,16 @@ function Sidebar({ ollama }: Props) {
           </p>
         )}
       </nav>
+
+      <button
+        type="button"
+        disabled={gerando}
+        onClick={() => abrirMemorias("global")}
+        aria-current={naTelaDeMemorias ? "true" : undefined}
+        className={`${BOTAO} mt-2`}
+      >
+        ◇ Memória global
+      </button>
 
       <footer className="mt-3 text-xs text-neutral-600 dark:text-neutral-400">
         <p role="status">Ollama {ollama.versao} em execução.</p>

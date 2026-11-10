@@ -7,11 +7,12 @@ pub mod ollama;
 use std::sync::{Arc, Mutex};
 
 use banco::{
-    Banco, Conversa, DadosConversa, DadosProjeto, ErroBanco, Mensagem, Projeto,
-    ResumoExclusaoProjeto,
+    Banco, Conversa, DadosConversa, DadosProjeto, ErroBanco, EscopoMemoria, Memoria, Mensagem,
+    Projeto, ResumoExclusaoProjeto,
 };
 use conversas::{
-    ControleDeGeracao, DesfechoDaGeracao, ModoDeGeracao, gerar, registrar_mensagem_do_usuario,
+    AvisoDeContexto, ControleDeGeracao, DesfechoDaGeracao, ModoDeGeracao, gerar,
+    registrar_mensagem_do_usuario,
 };
 use instalador::{InstaladorDoOllama, ProgressoInstalacao, ResultadoInstalacao};
 use modelos::{
@@ -201,6 +202,8 @@ struct ResultadoDaGeracaoParaInterface {
     mensagem: Option<Mensagem>,
     /// O modelo parou por limite de tamanho.
     cortada: bool,
+    /// O contexto enviado estava perto do `num_ctx` (ou além dele).
+    contexto: Option<AvisoDeContexto>,
 }
 
 /// Falha da geração. A mensagem do usuário continua gravada.
@@ -283,17 +286,21 @@ async fn executar_geracao(
     .await;
 
     match resultado {
-        Ok(DesfechoDaGeracao::Concluida { mensagem, cortada }) => {
-            Ok(ResultadoDaGeracaoParaInterface {
-                estado: "concluida",
-                mensagem: Some(mensagem),
-                cortada,
-            })
-        }
+        Ok(DesfechoDaGeracao::Concluida {
+            mensagem,
+            cortada,
+            contexto,
+        }) => Ok(ResultadoDaGeracaoParaInterface {
+            estado: "concluida",
+            mensagem: Some(mensagem),
+            cortada,
+            contexto,
+        }),
         Ok(DesfechoDaGeracao::Cancelada { mensagem }) => Ok(ResultadoDaGeracaoParaInterface {
             estado: "cancelada",
             mensagem,
             cortada: false,
+            contexto: None,
         }),
         Err(falha) => {
             eprintln!("a geração da resposta falhou: {}", falha.erro);
@@ -451,6 +458,62 @@ async fn detalhes_do_modelo(
         janela_de_contexto: detalhes.janela_de_contexto,
         suporta_raciocinio: detalhes.suporta_raciocinio(),
     })
+}
+
+// ----- Memórias -----
+
+/// Memórias globais, que valem para qualquer projeto, da mais antiga para a mais nova.
+#[tauri::command]
+fn listar_memorias_globais(estado: tauri::State<'_, EstadoBanco>) -> Result<Vec<Memoria>, String> {
+    com_banco(&estado, Banco::listar_memorias_globais)
+}
+
+/// Memórias de um projeto, da mais antiga para a mais nova.
+#[tauri::command]
+fn listar_memorias_do_projeto(
+    projeto_id: String,
+    estado: tauri::State<'_, EstadoBanco>,
+) -> Result<Vec<Memoria>, String> {
+    com_banco(&estado, |banco| {
+        banco.listar_memorias_do_projeto(&projeto_id)
+    })
+}
+
+/// Cria uma memória global ou de um projeto. Entra no contexto das próximas mensagens enviadas.
+#[tauri::command]
+fn criar_memoria(
+    escopo: EscopoMemoria,
+    projeto_id: Option<String>,
+    conteudo: String,
+    estado: tauri::State<'_, EstadoBanco>,
+) -> Result<Memoria, String> {
+    com_banco(&estado, |banco| match (escopo, projeto_id) {
+        (EscopoMemoria::Global, _) => banco.criar_memoria_global(&conteudo),
+        (EscopoMemoria::Projeto, Some(projeto_id)) => {
+            banco.criar_memoria_de_projeto(&projeto_id, &conteudo)
+        }
+        (EscopoMemoria::Projeto, None) => Err(ErroBanco::Rejeitado(
+            "Escolha o projeto desta memória.".to_owned(),
+        )),
+    })
+}
+
+/// Edita o texto de uma memória. Só vale para as próximas mensagens: o que já foi gerado não
+/// muda.
+#[tauri::command]
+fn atualizar_memoria(
+    id: String,
+    conteudo: String,
+    estado: tauri::State<'_, EstadoBanco>,
+) -> Result<Memoria, String> {
+    com_banco(&estado, |banco| banco.atualizar_memoria(&id, &conteudo))
+}
+
+/// Remove uma memória, sem aviso de "contexto mudou": as próximas mensagens simplesmente não
+/// a levam mais.
+#[tauri::command]
+fn excluir_memoria(id: String, estado: tauri::State<'_, EstadoBanco>) -> Result<(), String> {
+    com_banco(&estado, |banco| banco.excluir_memoria(&id))
 }
 
 /// Chave de configuração que marca o onboarding como concluído.
@@ -708,7 +771,12 @@ pub fn run() {
             gerar_resposta_pendente,
             regenerar_resposta,
             cancelar_geracao,
-            detalhes_do_modelo
+            detalhes_do_modelo,
+            listar_memorias_globais,
+            listar_memorias_do_projeto,
+            criar_memoria,
+            atualizar_memoria,
+            excluir_memoria
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o aplicativo Memoteca")

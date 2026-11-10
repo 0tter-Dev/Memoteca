@@ -1,6 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type {
+  AvisoDeContexto,
   Conversa,
   DadosConversa,
   EventoDeGeracao,
@@ -34,6 +35,8 @@ interface EstadoDeConversas {
   erroDeEnvio: string | null;
   /** A última resposta foi cortada por limite de tamanho. */
   respostaCortada: boolean;
+  /** O contexto da última geração estava perto do `num_ctx` (ou além dele). */
+  avisoDeContexto: AvisoDeContexto | null;
 
   carregarConversas: (projetoId: string) => Promise<void>;
   /** Cria uma conversa no projeto e a abre. Devolve a mensagem de erro, ou `null`. */
@@ -61,6 +64,7 @@ const estadoInicial = {
   emAndamento: null,
   erroDeEnvio: null,
   respostaCortada: false,
+  avisoDeContexto: null,
 };
 
 export const useConversas = create<EstadoDeConversas>()((set, get) => {
@@ -111,6 +115,7 @@ export const useConversas = create<EstadoDeConversas>()((set, get) => {
       gerando: true,
       erroDeEnvio: null,
       respostaCortada: false,
+      avisoDeContexto: null,
       emAndamento: { conteudo: "", raciocinio: "" },
     });
 
@@ -129,6 +134,7 @@ export const useConversas = create<EstadoDeConversas>()((set, get) => {
 
     let falha: string | null = null;
     let cortada = false;
+    let avisoDeContexto: AvisoDeContexto | null = null;
     try {
       const resultado = await invoke<ResultadoDaGeracao>(comando, {
         conversaId: id,
@@ -136,6 +142,7 @@ export const useConversas = create<EstadoDeConversas>()((set, get) => {
         canal,
       });
       cortada = resultado.cortada;
+      avisoDeContexto = resultado.contexto ?? null;
     } catch (erro: unknown) {
       const tipada = erro as Partial<FalhaDaGeracao> | null;
       falha =
@@ -154,6 +161,7 @@ export const useConversas = create<EstadoDeConversas>()((set, get) => {
       emAndamento: null,
       erroDeEnvio: falha,
       respostaCortada: cortada,
+      avisoDeContexto,
     });
   }
 
@@ -173,6 +181,7 @@ export const useConversas = create<EstadoDeConversas>()((set, get) => {
           mensagens: [],
           erroDeEnvio: null,
           respostaCortada: false,
+          avisoDeContexto: null,
         });
         return null;
       } catch (erro: unknown) {
@@ -189,6 +198,7 @@ export const useConversas = create<EstadoDeConversas>()((set, get) => {
         mensagens: [],
         erroDeEnvio: null,
         respostaCortada: false,
+        avisoDeContexto: null,
       });
       await recarregarMensagens(id);
     },
@@ -199,6 +209,7 @@ export const useConversas = create<EstadoDeConversas>()((set, get) => {
         mensagens: [],
         erroDeEnvio: null,
         respostaCortada: false,
+        avisoDeContexto: null,
       }),
 
     atualizarConversa: async (id, dados) => {

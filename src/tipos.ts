@@ -129,6 +129,14 @@ export interface ResultadoDaGeracao {
   mensagem: Mensagem | null;
   /** O modelo parou por limite de tamanho. */
   cortada: boolean;
+  /** O contexto enviado estava perto do `num_ctx` (ou além dele). */
+  contexto?: AvisoDeContexto | null;
+}
+
+/** Tamanho estimado do contexto enviado e o `num_ctx` usado, em tokens. */
+export interface AvisoDeContexto {
+  estimado: number;
+  limite: number;
 }
 
 /** Falha da geração (rejeição dos comandos de chat). */
@@ -141,6 +149,21 @@ export interface DetalhesDoModelo {
   janelaDeContexto: number | null;
   suportaRaciocinio: boolean;
 }
+
+export type EscopoDeMemoria = "global" | "projeto";
+
+export interface Memoria {
+  id: string;
+  escopo: EscopoDeMemoria;
+  /** Presente se, e somente se, o escopo é `projeto`. */
+  projetoId: string | null;
+  conteudo: string;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+/** Tamanho máximo de uma memória, o mesmo que o backend aplica. */
+export const MEMORIA_MAXIMA = 2_000;
 
 /** Limite de tamanho de uma mensagem, o mesmo que o backend aplica. */
 export const MENSAGEM_MAXIMA = 100_000;
