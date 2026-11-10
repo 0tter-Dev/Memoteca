@@ -114,7 +114,7 @@ pub enum DesfechoDaGeracao {
 }
 
 /// Roda uma operação no banco, sem segurar o bloqueio entre um `await` e outro.
-fn com_banco<T>(
+pub(super) fn com_banco<T>(
     banco: &Mutex<Banco>,
     operacao: impl FnOnce(&Banco) -> Result<T, ErroBanco>,
 ) -> Result<T, ErroBanco> {
@@ -124,7 +124,17 @@ fn com_banco<T>(
     operacao(&banco)
 }
 
-fn keep_alive_do_ollama(texto: &str) -> KeepAlive {
+/// O `num_ctx` que vai ao Ollama: o pedido pela conversa, limitado à janela do modelo.
+pub(super) fn num_ctx_efetivo(pedido: Option<i64>, janela: Option<u64>) -> Option<u32> {
+    pedido.map(|pedido| {
+        let limitado = janela.map_or(pedido, |janela| {
+            pedido.min(i64::try_from(janela).unwrap_or(i64::MAX))
+        });
+        u32::try_from(limitado).unwrap_or(u32::MAX)
+    })
+}
+
+pub(super) fn keep_alive_do_ollama(texto: &str) -> KeepAlive {
     match texto {
         "-1" => KeepAlive::Segundos(-1),
         "0" => KeepAlive::Segundos(0),
@@ -199,12 +209,7 @@ pub async fn gerar(
         // Qualquer outra falha ao consultar os detalhes não impede de conversar.
         Err(_) => None,
     };
-    let num_ctx = conversa.num_ctx.map(|pedido| {
-        let limitado = janela.map_or(pedido, |janela| {
-            pedido.min(i64::try_from(janela).unwrap_or(i64::MAX))
-        });
-        u32::try_from(limitado).unwrap_or(u32::MAX)
-    });
+    let num_ctx = num_ctx_efetivo(conversa.num_ctx, janela);
 
     let contexto = montar_contexto(&instrucoes, &globais, &do_projeto, historico);
     let aviso_de_contexto = num_ctx.and_then(|num_ctx| avaliar_contexto(&contexto, num_ctx));

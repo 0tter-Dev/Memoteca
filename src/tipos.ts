@@ -150,6 +150,17 @@ export interface DetalhesDoModelo {
   suportaRaciocinio: boolean;
 }
 
+/** Uma sugestão de memória do modelo, ainda sem escopo: o usuário escolhe ao aprovar. */
+export interface SugestaoDeMemoria {
+  texto: string;
+}
+
+export interface ResultadoDaSugestao {
+  /** O usuário cancelou: não há sugestões e nada foi criado. */
+  cancelada: boolean;
+  sugestoes: SugestaoDeMemoria[];
+}
+
 export type EscopoDeMemoria = "global" | "projeto";
 
 export interface Memoria {

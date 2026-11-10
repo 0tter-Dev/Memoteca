@@ -11,8 +11,8 @@ use banco::{
     Projeto, ResumoExclusaoProjeto,
 };
 use conversas::{
-    AvisoDeContexto, ControleDeGeracao, DesfechoDaGeracao, ModoDeGeracao, gerar,
-    registrar_mensagem_do_usuario,
+    AvisoDeContexto, ControleDeGeracao, DesfechoDaGeracao, DesfechoDaSugestao, ModoDeGeracao,
+    SugestaoDeMemoria, gerar, registrar_mensagem_do_usuario, sugerir,
 };
 use instalador::{InstaladorDoOllama, ProgressoInstalacao, ResultadoInstalacao};
 use modelos::{
@@ -516,6 +516,58 @@ fn excluir_memoria(id: String, estado: tauri::State<'_, EstadoBanco>) -> Result<
     com_banco(&estado, |banco| banco.excluir_memoria(&id))
 }
 
+/// O que a tela recebe ao pedir sugestões de memória.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ResultadoDaSugestaoParaInterface {
+    /// O usuário cancelou: não há sugestões e nada foi criado.
+    cancelada: bool,
+    sugestoes: Vec<SugestaoDeMemoria>,
+}
+
+/// Pede ao modelo da conversa sugestões de memória. **Não grava nada**: nem memória, nem
+/// mensagem. Cada sugestão só vira memória quando o usuário a aprova na tela, pelo comando
+/// `criar_memoria`. Usa a mesma "vaga" da geração de respostas, então não roda junto com uma.
+#[tauri::command]
+async fn sugerir_memorias(
+    conversa_id: String,
+    banco: tauri::State<'_, EstadoBanco>,
+    conversas: tauri::State<'_, ConversasDoApp>,
+    ollama_do_app: tauri::State<'_, OllamaDoApp>,
+) -> Result<ResultadoDaSugestaoParaInterface, String> {
+    let banco = banco.0.as_ref().map_err(Clone::clone)?;
+    let vaga = conversas
+        .controle
+        .iniciar()
+        .map_err(|erro| erro.mensagem_amigavel())?;
+
+    // Garante que o Ollama está no ar, como no chat.
+    let gerenciador = ollama_do_app.0.as_ref().map_err(Clone::clone)?;
+    let situacao = gerenciador.lock().await.preparar().await;
+    if !matches!(situacao, ollama::ciclo::EstadoOllama::EmExecucao(_)) {
+        return Err(situacao
+            .para_interface()
+            .mensagem
+            .unwrap_or_else(|| "O Ollama não está disponível. Tente de novo.".to_owned()));
+    }
+
+    let cliente = conversas.cliente.as_ref().map_err(Clone::clone)?;
+    match sugerir(banco, cliente, &conversa_id, vaga.cancelamento()).await {
+        Ok(DesfechoDaSugestao::Sugestoes(sugestoes)) => Ok(ResultadoDaSugestaoParaInterface {
+            cancelada: false,
+            sugestoes,
+        }),
+        Ok(DesfechoDaSugestao::Cancelada) => Ok(ResultadoDaSugestaoParaInterface {
+            cancelada: true,
+            sugestoes: Vec::new(),
+        }),
+        Err(erro) => {
+            eprintln!("a sugestão de memórias falhou: {erro}");
+            Err(erro.mensagem_amigavel())
+        }
+    }
+}
+
 /// Chave de configuração que marca o onboarding como concluído.
 const CONFIG_ONBOARDING_CONCLUIDO: &str = "onboarding_concluido";
 
@@ -776,7 +828,8 @@ pub fn run() {
             listar_memorias_do_projeto,
             criar_memoria,
             atualizar_memoria,
-            excluir_memoria
+            excluir_memoria,
+            sugerir_memorias
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o aplicativo Memoteca")

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import ConfirmarExclusaoDeConversa from "./ConfirmarExclusaoDeConversa";
 import { useConversas } from "./estado/conversas";
+import { useSugestoes } from "./estado/sugestoes";
 import MensagemNaTela, { RespostaChegando } from "./MensagemNaTela";
 import ParametrosDaConversa from "./ParametrosDaConversa";
+import SugerirMemorias from "./SugerirMemorias";
 import {
   MENSAGEM_MAXIMA,
   TITULO_DA_CONVERSA_MAXIMO,
@@ -93,11 +95,12 @@ function Titulo({ conversa }: { conversa: Conversa }) {
 
 function Campo({ conversa }: { conversa: Conversa }) {
   const { gerando, enviar, cancelar } = useConversas();
+  const sugerindo = useSugestoes((estado) => estado.aberta);
   const [texto, setTexto] = useState("");
   const semModelo = !conversa.modelo;
 
   async function enviarTexto() {
-    if (texto.trim() === "" || gerando || semModelo) {
+    if (texto.trim() === "" || gerando || semModelo || sugerindo) {
       return;
     }
     const { persistiu } = await enviar(texto);
@@ -171,6 +174,7 @@ function TelaDaConversa({ conversa }: Props) {
     tentarDeNovo,
     excluirConversa,
   } = useConversas();
+  const abrirSugestoes = useSugestoes((estado) => estado.abrir);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   const fim = useRef<HTMLDivElement>(null);
 
@@ -194,14 +198,24 @@ function TelaDaConversa({ conversa }: Props) {
     >
       <div className="flex items-center justify-between gap-2">
         <Titulo key={conversa.titulo} conversa={conversa} />
-        <button
-          type="button"
-          disabled={gerando}
-          onClick={() => setConfirmandoExclusao(true)}
-          className="rounded border border-red-700 px-2 py-0.5 text-sm text-red-700 disabled:opacity-50 dark:text-red-400"
-        >
-          Excluir conversa
-        </button>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            disabled={gerando || mensagens.length === 0}
+            onClick={() => void abrirSugestoes(conversa.id)}
+            className="rounded border border-neutral-400 px-2 py-0.5 text-sm disabled:opacity-50"
+          >
+            Sugerir memórias
+          </button>
+          <button
+            type="button"
+            disabled={gerando}
+            onClick={() => setConfirmandoExclusao(true)}
+            className="rounded border border-red-700 px-2 py-0.5 text-sm text-red-700 disabled:opacity-50 dark:text-red-400"
+          >
+            Excluir conversa
+          </button>
+        </div>
       </div>
 
       <ParametrosDaConversa conversa={conversa} />
@@ -269,6 +283,8 @@ function TelaDaConversa({ conversa }: Props) {
       </div>
 
       <Campo conversa={conversa} />
+
+      <SugerirMemorias conversa={conversa} />
 
       {confirmandoExclusao && (
         <ConfirmarExclusaoDeConversa

@@ -27,7 +27,7 @@ use tokio_util::sync::CancellationToken;
 pub use erro::{ErroOllama, FalhaChat, TextoParcial};
 pub use tipos::{
     DetalhesModelo, InfoVersao, KeepAlive, MensagemPedido, ModeloInstalado, MotivoFim, PapelChat,
-    PedacoChat, PedidoChat, ProgressoDownload, RespostaChat, ResultadoDownload,
+    PedacoChat, PedidoChat, PedidoEstruturado, ProgressoDownload, RespostaChat, ResultadoDownload,
 };
 pub use versao::{VERSAO_MINIMA, Versao};
 
@@ -352,6 +352,55 @@ impl ClienteOllama {
                 erro,
                 parcial: texto,
             }),
+        }
+    }
+
+    /// `POST /api/chat` sem streaming e com a resposta restrita a um esquema (`format`).
+    /// Devolve o texto de `message.content`, ou `None` se o usuário cancelou. Cancelar fecha a
+    /// conexão. Como nenhum byte chega antes de a resposta ficar pronta, `ociosidade_chat` vale
+    /// aqui como o tempo total máximo (inclui carregar o modelo).
+    pub async fn conversar_estruturado(
+        &self,
+        pedido: &PedidoEstruturado,
+        cancelamento: &CancellationToken,
+    ) -> Result<Option<String>, ErroOllama> {
+        let corpo = pedido.para_json();
+        let chamada = async {
+            let resposta = self
+                .http
+                .post(self.url("/api/chat"))
+                .header(CONTENT_TYPE, "application/json")
+                .body(corpo.to_string())
+                .send()
+                .await
+                .map_err(|erro| erro_de_transporte(&erro))?;
+            if !resposta.status().is_success() {
+                return Err(erro_de_status(resposta).await);
+            }
+            let bytes = resposta
+                .bytes()
+                .await
+                .map_err(|erro| erro_de_transporte(&erro))?;
+            let linha: LinhaChat = serde_json::from_slice(&bytes)
+                .map_err(|erro| ErroOllama::RespostaInvalida(erro.to_string()))?;
+            if let Some(detalhe) = linha.error {
+                return Err(ErroOllama::ErroDoOllama(detalhe));
+            }
+            Ok(linha
+                .message
+                .and_then(|mensagem| mensagem.content)
+                .unwrap_or_default())
+        };
+
+        tokio::select! {
+            biased;
+            () = cancelamento.cancelled() => Ok(None),
+            resultado = tokio::time::timeout(self.limites.ociosidade_chat, chamada) => {
+                match resultado {
+                    Err(_) => Err(ErroOllama::TempoEsgotado),
+                    Ok(resultado) => resultado.map(Some),
+                }
+            }
         }
     }
 
