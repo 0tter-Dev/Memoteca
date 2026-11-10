@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Projeto {
     pub id: String,
@@ -30,7 +30,7 @@ pub struct ResumoExclusaoProjeto {
     pub memorias: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Conversa {
     pub id: String,
@@ -62,7 +62,7 @@ pub struct DadosConversa {
     pub keep_alive: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Papel {
     #[serde(rename = "user")]
     Usuario,
@@ -71,7 +71,7 @@ pub enum Papel {
 }
 
 /// A mensagem está inteira ou foi guardada pela metade (resposta interrompida).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EstadoMensagem {
     Completa,
@@ -112,7 +112,7 @@ impl Papel {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Mensagem {
     pub id: String,
@@ -136,7 +136,7 @@ pub enum EscopoMemoria {
     Projeto,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Memoria {
     pub id: String,

@@ -26,8 +26,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E09 | Projetos | E03, E04 | concluída |
 | E10 | Conversas e chat com streaming | E05, E09 | concluída |
 | E11 | Memória manual (projeto e global) e injeção | E10 | concluída |
-| E12 | Sugestão de memórias sob demanda | E11 | em revisão |
-| E13 | Exportar e importar | E04, E11 | pendente |
+| E12 | Sugestão de memórias sob demanda | E11 | concluída |
+| E13 | Exportar e importar | E04, E11 | em revisão |
 | E14 | Robustez transversal: erros amigáveis e recuperação | E07, E08, E10, E13 | pendente |
 | E15 | Testes funcionais ponta a ponta do MVP | E14 | pendente |
 | E16 | Empacotamento e release | E15 | pendente |
@@ -530,7 +530,19 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - O arquivo exportado informa a versão do formato.
 - Importar sobre dados existentes segue a política definida, sem duplicar itens com o mesmo ID.
 
-**Decisões a tomar:** formato (JSON ou Markdown, ou os dois) e política de importação (mesclar ou substituir).
+**Decisões a tomar:** formato (JSON ou Markdown, ou os dois) e política de importação (mesclar ou substituir). _Decididas com o usuário, ver o Registro de decisões._
+
+**Como ficou (E13):**
+
+- **Formato:** um único arquivo **JSON** (formato `memoteca-backup`, **versão 1**), com `formato`, `versao`, `exportadoEm`, `app` e as listas `projetos`, `conversas`, `mensagens` (com o raciocínio e o estado `completa` ou `interrompida`) e `memorias`, com os mesmos IDs e datas do banco. As configurações do app (como "onboarding concluído") **não entram**: são da máquina. O arquivo não é criptografado, e a tela avisa.
+- **Exportar:** a janela "Salvar como" do Windows (aberta pelo Rust) sugere `memoteca-backup-AAAA-MM-DD.json`. O banco é lido numa transação só (as tabelas são do mesmo instante) e o arquivo é gravado de forma **atômica**: escreve num arquivo temporário ao lado, confere que chegou ao disco e só então troca pelo destino. Se qualquer passo falhar (sem permissão, disco cheio, pasta inexistente), o temporário é apagado, **nenhum arquivo parcial fica** e um backup antigo no mesmo lugar não é tocado (R30).
+- **Verificar antes de gravar (R28):** ler o arquivo não grava nada. A ordem é: é JSON? tem a marca `memoteca-backup`? a versão é a 1? (uma versão diferente é "versão desconhecida", com a mensagem "atualize o Memoteca", e não "arquivo inválido"); depois a estrutura e os dados: IDs UUID válidos e únicos, referências que fecham dentro do arquivo (conversa → projeto, mensagem → conversa, memória de projeto → projeto), posições de mensagem únicas, datas no formato do app e os mesmos limites de quando o usuário cria (nome, título, parâmetros, memória). Arquivo maior que 200 MB é recusado. Qualquer recusa diz "Nada foi importado nem alterado".
+- **Importar mescla, sem apagar nem sobrescrever:** um item cujo ID já existe é **mantido como está**; uma conversa que já existe fica inteira, com as mensagens que tem. Um item que o usuário **excluiu aqui** é ignorado (o banco não aceita de volta um ID excluído), e o que depende dele (as conversas e memórias de um projeto excluído) também. O resto é adicionado. Num banco vazio, restaura tudo com os mesmos IDs. Importar duas vezes dá o mesmo resultado de uma.
+- **Atômica (R29):** a importação roda numa transação e, se qualquer inserção falhar no meio, tudo é desfeito. O teste injeta a falha com um gatilho que recusa uma mensagem depois de projetos e conversas já terem entrado.
+- **Confirmação:** escolher o arquivo só **analisa** (a mesma lógica da importação, desfeita no fim) e mostra o que vai acontecer: o que será adicionado, o que já existe e fica como está, e o que foi excluído aqui e não volta. O backup analisado fica guardado no backend, então o que é confirmado é exatamente o que foi analisado. Sem nada novo, a tela só deixa fechar.
+- **Comandos do Tauri:** `exportar_backup`, `analisar_backup`, `importar_backup_analisado` e `descartar_backup_analisado`. O caminho do arquivo nunca passa pelo JavaScript: a janela é aberta pelo Rust.
+- **Interface (T08):** botão "⚙ Configurações" no fim da lateral, com a seção "Dados" ("Exportar backup…" e "Importar backup…"). Por enquanto a tela só tem essa seção. As de Ollama e Modelos da T08 continuam fora.
+- **Dependência nova:** `tauri-plugin-dialog` (só o crate Rust), que traz `tauri-plugin-fs` e `rfd` como dependências dele. Sem pacote npm e sem permissão nova para o JavaScript.
 
 ### E14 — Robustez transversal: erros amigáveis e recuperação
 
@@ -634,6 +646,10 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Modelo das sugestões de memória (E12) | O da própria conversa (já carregado na memória, sem configuração nova). Se for pequeno demais, as sugestões podem ser fracas, e o usuário aprova ou rejeita cada uma | 2026-11-10 |
 | Escopo das sugestões de memória (E12) | O usuário escolhe ao aprovar, com "Deste projeto" como padrão. O modelo não decide escopo, então nenhuma sugestão vira global por palpite dele | 2026-11-10 |
 | Chamada das sugestões (E12) | `format` com JSON Schema e `think: false` (só nesta chamada; o chat continua sem `think`), temperatura 0,2, até 5 sugestões, conversa limitada a 12.000 caracteres recentes. Lista vazia do modelo não é erro. Comportamento de `format` e `think: false` conferido no Ollama 0.32.9 (ver o contrato) | 2026-11-10 |
+| Formato do backup (E13) | Só JSON, com `formato` e `versao` (1). Cobre tudo, mantém os IDs e dá para importar de volta. Markdown legível fica para depois, se fizer falta | 2026-11-10 |
+| Política de importação (E13) | Mesclar, mantendo o que já existe: o mesmo ID fica como está, sem duplicar nem sobrescrever; o que o usuário excluiu aqui é ignorado; nada é apagado. Num banco vazio restaura tudo. "Substituir tudo" não existe | 2026-11-10 |
+| Escolha do arquivo do backup (E13) | Janela do Windows, com `tauri-plugin-dialog` (crate Rust; traz `tauri-plugin-fs` e `rfd`). O Rust abre a janela, então o caminho nunca passa pelo JavaScript e o plugin não ganha permissões para a interface. Avisado no PR da E13 | 2026-11-10 |
+| Detalhes do backup (E13) | Fora do arquivo: as configurações do app e o registro de exclusões. Arquivo de até 200 MB. Gravação atômica por arquivo temporário e troca. Conversa que já existe é mantida inteira, sem mesclar mensagens | 2026-11-10 |
 | Dependências do chat (E10) | `react-markdown`, `remark-gfm` e `rehype-highlight`, todas já decididas na E03. O realce de código usa cores próprias (CSS), sem importar tema do `highlight.js`. Avisado no PR da E10 | 2026-11-09 |
 | Regras de validação do projeto | Nome obrigatório, com até 100 caracteres (contados como caracteres, e não bytes); instruções opcionais, com até 20.000 caracteres; nomes de projeto repetidos são permitidos; lista em ordem alfabética sem diferenciar maiúsculas. Os limites são defesa contra textos absurdos e podem mudar | 2026-11-09 |
 | Modelo herdado pelas conversas | Vale o modelo padrão do projeto; sem ele, o da primeira conversa criada no projeto que tenha modelo; sem nenhum, a tela pede a escolha. A conversa não grava o padrão: a regra é calculada a cada nova conversa | 2026-11-09 |
@@ -655,7 +671,6 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Decisão | Etapa que a resolve |
 | --- | --- |
 | Confirmar a versão mínima do Ollama (0.30.0) contra um Ollama real dessa versão. Na E06 só havia a 0.32.9 para testar | E15 (checklist manual) |
-| Formato do export e política de importação | E13 |
 | Formato do instalador, assinatura de código, dados na desinstalação | E16 |
 | Identidade visual (logo e paleta). Opcional, a discutir quando o usuário quiser, com a skill `project-identity`. Direção inicial: marca geométrica de "prateleiras e um ponto". Os ícones atuais são os padrões do Tauri e são provisórios | Antes de E16 |
 | Consulta formal de registro de marca (INPI, USPTO, EUIPO) e do domínio, antes de divulgar amplamente. A triagem feita não substitui essa consulta | Mantenedor, antes de divulgar |

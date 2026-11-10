@@ -7,6 +7,7 @@
 pub mod backup;
 pub mod erro;
 pub mod id;
+pub mod intercambio;
 pub mod migracoes;
 pub mod modelos;
 mod repositorio;

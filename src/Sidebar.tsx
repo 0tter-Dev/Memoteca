@@ -22,6 +22,7 @@ function Sidebar({ ollama }: Props) {
     selecionar,
     iniciarNovo,
     abrirMemorias,
+    abrirConfiguracoes,
   } = useProjetos();
   const {
     conversasPorProjeto,
@@ -34,6 +35,8 @@ function Sidebar({ ollama }: Props) {
   } = useConversas();
   const [erro, setErro] = useState<string | null>(null);
   const naTelaDeMemorias = modo === "memorias";
+  const naTelaDeConfiguracoes = modo === "configuracoes";
+  const emTelaAvulsa = naTelaDeMemorias || naTelaDeConfiguracoes;
 
   // As conversas do projeto aberto.
   useEffect(() => {
@@ -88,7 +91,7 @@ function Sidebar({ ollama }: Props) {
                     fecharConversa();
                   }}
                   aria-current={
-                    aberto && ativaId === null && !naTelaDeMemorias
+                    aberto && ativaId === null && !emTelaAvulsa
                       ? "true"
                       : undefined
                   }
@@ -112,7 +115,7 @@ function Sidebar({ ollama }: Props) {
                             void abrirConversa(conversa.id);
                           }}
                           aria-current={
-                            conversa.id === ativaId && !naTelaDeMemorias
+                            conversa.id === ativaId && !emTelaAvulsa
                               ? "true"
                               : undefined
                           }
@@ -154,6 +157,15 @@ function Sidebar({ ollama }: Props) {
         className={`${BOTAO} mt-2`}
       >
         ◇ Memória global
+      </button>
+      <button
+        type="button"
+        disabled={gerando}
+        onClick={abrirConfiguracoes}
+        aria-current={naTelaDeConfiguracoes ? "true" : undefined}
+        className={BOTAO}
+      >
+        ⚙ Configurações
       </button>
 
       <footer className="mt-3 text-xs text-neutral-600 dark:text-neutral-400">

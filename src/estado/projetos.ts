@@ -10,7 +10,7 @@ function mensagemDoErro(erro: unknown): string {
 }
 
 /** O que a área principal mostra: o projeto, o formulário de um novo ou o de edição, ou as memórias. */
-export type Modo = "ver" | "novo" | "editar" | "memorias";
+export type Modo = "ver" | "novo" | "editar" | "memorias" | "configuracoes";
 
 /** Aba aberta na tela de memórias. */
 export type AbaDeMemorias = "projeto" | "global";
@@ -31,6 +31,8 @@ interface EstadoDeProjetos {
   iniciarEdicao: () => void;
   /** Abre a tela de memórias na aba dada. */
   abrirMemorias: (aba: AbaDeMemorias) => void;
+  /** Abre a tela de configurações. */
+  abrirConfiguracoes: () => void;
   cancelarFormulario: () => void;
   /** Salva (cria ou edita, conforme o modo). Devolve a mensagem de erro, ou `null`. */
   salvar: (dados: DadosProjeto) => Promise<string | null>;
@@ -71,6 +73,7 @@ export const useProjetos = create<EstadoDeProjetos>()((set, get) => ({
   iniciarNovo: () => set({ modo: "novo" }),
   iniciarEdicao: () => set({ modo: "editar" }),
   abrirMemorias: (aba) => set({ modo: "memorias", abaDeMemorias: aba }),
+  abrirConfiguracoes: () => set({ modo: "configuracoes" }),
   cancelarFormulario: () => set({ modo: "ver" }),
 
   salvar: async (dados) => {

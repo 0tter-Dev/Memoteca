@@ -1,11 +1,13 @@
 pub mod banco;
 pub mod conversas;
 pub mod instalador;
+pub mod intercambio;
 pub mod modelos;
 pub mod ollama;
 
 use std::sync::{Arc, Mutex};
 
+use banco::intercambio::{Backup, ResumoDaImportacao};
 use banco::{
     Banco, Conversa, DadosConversa, DadosProjeto, ErroBanco, EscopoMemoria, Memoria, Mensagem,
     Projeto, ResumoExclusaoProjeto,
@@ -15,6 +17,7 @@ use conversas::{
     SugestaoDeMemoria, gerar, registrar_mensagem_do_usuario, sugerir,
 };
 use instalador::{InstaladorDoOllama, ProgressoInstalacao, ResultadoInstalacao};
+use intercambio::ResumoDaExportacao;
 use modelos::{
     AvaliacaoParaInterface, Catalogo, ProgressoDoModelo, ResultadoDoModelo, ServicoDeModelos,
 };
@@ -24,6 +27,7 @@ use ollama::{ClienteOllama, PedacoChat};
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{Manager, RunEvent};
+use tauri_plugin_dialog::DialogExt;
 use tokio_util::sync::CancellationToken;
 
 /// Resultado de abrir o banco na inicialização. Em caso de falha guarda a mensagem
@@ -568,6 +572,188 @@ async fn sugerir_memorias(
     }
 }
 
+// ----- Exportar e importar (backup manual) -----
+
+/// O backup que o usuário escolheu e que espera a confirmação para ser importado. Fica no
+/// backend, então o que é confirmado é exatamente o que foi analisado.
+struct ImportacaoPendente(Mutex<Option<Backup>>);
+
+/// Abre a janela do Windows para escolher onde salvar (`Some(nome)`) ou qual arquivo abrir
+/// (`None`). `None` no resultado significa que o usuário fechou a janela sem escolher.
+async fn escolher_arquivo(
+    app: &tauri::AppHandle,
+    janela: &tauri::WebviewWindow,
+    salvar_como: Option<String>,
+) -> Option<std::path::PathBuf> {
+    let (envio, recebimento) = tokio::sync::oneshot::channel();
+    let dialogo = app
+        .dialog()
+        .file()
+        .set_parent(janela)
+        .add_filter("Backup do Memoteca", &["json"]);
+    match salvar_como {
+        Some(nome) => dialogo
+            .set_title("Exportar backup")
+            .set_file_name(nome)
+            .save_file(move |caminho| {
+                let _ = envio.send(caminho);
+            }),
+        None => dialogo
+            .set_title("Importar backup")
+            .pick_file(move |caminho| {
+                let _ = envio.send(caminho);
+            }),
+    }
+    recebimento
+        .await
+        .ok()
+        .flatten()
+        .and_then(|caminho| caminho.into_path().ok())
+}
+
+/// O que a tela recebe depois de exportar.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ResultadoDaExportacaoParaInterface {
+    /// O usuário fechou a janela sem escolher onde salvar. Nada foi gravado.
+    cancelado: bool,
+    caminho: Option<String>,
+    resumo: Option<ResumoDaExportacao>,
+}
+
+/// Roda uma operação no banco com o bloqueio, devolvendo só a mensagem amigável se falhar.
+fn com_banco_exclusivo<T>(
+    banco: &Mutex<Banco>,
+    operacao: impl FnOnce(&Banco) -> Result<T, ErroBanco>,
+) -> Result<T, String> {
+    let banco = banco
+        .lock()
+        .map_err(|_| ErroBanco::Interno("banco em uso".into()).mensagem_amigavel())?;
+    operacao(&banco).map_err(|erro| {
+        eprintln!("operação no banco falhou: {erro}");
+        erro.mensagem_amigavel()
+    })
+}
+
+/// Exporta todos os dados para um arquivo JSON. O usuário escolhe o destino.
+#[tauri::command]
+async fn exportar_backup(
+    app: tauri::AppHandle,
+    janela: tauri::WebviewWindow,
+    banco: tauri::State<'_, EstadoBanco>,
+) -> Result<ResultadoDaExportacaoParaInterface, String> {
+    let banco = banco.0.as_ref().map_err(Clone::clone)?;
+    let data = com_banco_exclusivo(banco, Banco::data_local_de_hoje)?;
+    let Some(destino) =
+        escolher_arquivo(&app, &janela, Some(format!("memoteca-backup-{data}.json"))).await
+    else {
+        return Ok(ResultadoDaExportacaoParaInterface {
+            cancelado: true,
+            caminho: None,
+            resumo: None,
+        });
+    };
+
+    // A leitura do banco é rápida e o bloqueio é solto antes de gravar o arquivo.
+    let backup = com_banco_exclusivo(banco, Banco::montar_backup)?;
+    let resumo = intercambio::gravar_backup(&backup, &destino).map_err(|erro| {
+        eprintln!("a exportação falhou: {erro}");
+        erro.mensagem_amigavel()
+    })?;
+    Ok(ResultadoDaExportacaoParaInterface {
+        cancelado: false,
+        caminho: Some(destino.display().to_string()),
+        resumo: Some(resumo),
+    })
+}
+
+/// O que a tela mostra para o usuário confirmar a importação.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AnaliseDoBackupParaInterface {
+    caminho: String,
+    /// Quando o backup foi feito.
+    exportado_em: String,
+    /// O que a importação faria, tipo por tipo. Nada foi gravado ainda.
+    resumo: ResumoDaImportacao,
+}
+
+/// Deixa o usuário escolher um arquivo de backup, **verifica** o arquivo e diz o que a
+/// importação faria. Não grava nada no banco. `None` se o usuário fechou a janela sem escolher.
+#[tauri::command]
+async fn analisar_backup(
+    app: tauri::AppHandle,
+    janela: tauri::WebviewWindow,
+    banco: tauri::State<'_, EstadoBanco>,
+    pendente: tauri::State<'_, ImportacaoPendente>,
+) -> Result<Option<AnaliseDoBackupParaInterface>, String> {
+    let banco = banco.0.as_ref().map_err(Clone::clone)?;
+    let Some(caminho) = escolher_arquivo(&app, &janela, None).await else {
+        return Ok(None);
+    };
+
+    // O arquivo é lido e verificado fora do bloqueio do banco.
+    let lido = {
+        let caminho = caminho.clone();
+        tokio::task::spawn_blocking(move || intercambio::ler_backup(&caminho))
+            .await
+            .map_err(|_| "Não foi possível ler o arquivo. Tente de novo.".to_owned())?
+    };
+    let backup = lido.map_err(|erro| {
+        eprintln!("o backup escolhido foi recusado: {erro}");
+        erro.mensagem_amigavel()
+    })?;
+
+    let resumo = {
+        let banco = banco
+            .lock()
+            .map_err(|_| ErroBanco::Interno("banco em uso".into()).mensagem_amigavel())?;
+        banco.analisar_backup(&backup).map_err(|erro| {
+            eprintln!("a análise do backup falhou: {erro}");
+            erro.mensagem_amigavel()
+        })?
+    };
+
+    let exportado_em = backup.exportado_em.clone();
+    *pendente.0.lock().map_err(|_| "Tente de novo.".to_owned())? = Some(backup);
+    Ok(Some(AnaliseDoBackupParaInterface {
+        caminho: caminho.display().to_string(),
+        exportado_em,
+        resumo,
+    }))
+}
+
+/// Importa o backup que foi analisado e confirmado. A importação é atômica: se falhar, nada
+/// fica importado pela metade.
+#[tauri::command]
+fn importar_backup_analisado(
+    banco: tauri::State<'_, EstadoBanco>,
+    pendente: tauri::State<'_, ImportacaoPendente>,
+) -> Result<ResumoDaImportacao, String> {
+    let banco = banco.0.as_ref().map_err(Clone::clone)?;
+    let backup = pendente
+        .0
+        .lock()
+        .map_err(|_| "Tente de novo.".to_owned())?
+        .take()
+        .ok_or_else(|| "Escolha um arquivo de backup antes de importar.".to_owned())?;
+    let banco = banco
+        .lock()
+        .map_err(|_| ErroBanco::Interno("banco em uso".into()).mensagem_amigavel())?;
+    banco.importar_backup(&backup).map_err(|erro| {
+        eprintln!("a importação falhou: {erro}");
+        erro.mensagem_amigavel()
+    })
+}
+
+/// O usuário desistiu da importação depois de ver o resumo.
+#[tauri::command]
+fn descartar_backup_analisado(pendente: tauri::State<'_, ImportacaoPendente>) {
+    if let Ok(mut pendente) = pendente.0.lock() {
+        *pendente = None;
+    }
+}
+
 /// Chave de configuração que marca o onboarding como concluído.
 const CONFIG_ONBOARDING_CONCLUIDO: &str = "onboarding_concluido";
 
@@ -751,9 +937,11 @@ pub fn run() {
     }));
 
     builder
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let estado = EstadoBanco(abrir_banco(app.handle()));
             app.manage(estado);
+            app.manage(ImportacaoPendente(Mutex::new(None)));
 
             let ollama = GerenciadorOllama::novo()
                 .map(tokio::sync::Mutex::new)
@@ -829,7 +1017,11 @@ pub fn run() {
             criar_memoria,
             atualizar_memoria,
             excluir_memoria,
-            sugerir_memorias
+            sugerir_memorias,
+            exportar_backup,
+            analisar_backup,
+            importar_backup_analisado,
+            descartar_backup_analisado
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o aplicativo Memoteca")
