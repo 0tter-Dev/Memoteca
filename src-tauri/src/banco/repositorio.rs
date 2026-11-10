@@ -20,6 +20,10 @@ pub const NOME_DO_PROJETO_MAXIMO: usize = 100;
 /// Tamanho máximo das instruções (system prompt) de um projeto, em caracteres.
 pub const INSTRUCOES_DO_PROJETO_MAXIMO: usize = 20_000;
 
+/// Tamanho máximo de uma memória, em caracteres. Memórias são fatos curtos: elas entram no
+/// contexto de todo envio, então um texto longo come a janela do modelo.
+pub const MEMORIA_MAXIMA: usize = 2_000;
+
 /// Tamanho máximo do título de uma conversa, em caracteres.
 pub const TITULO_DA_CONVERSA_MAXIMO: usize = 100;
 /// Limites da temperatura e do contexto (`num_ctx`) de uma conversa.
@@ -97,6 +101,23 @@ fn validar_conversa(dados: &DadosConversa) -> Resultado<DadosConversa> {
         num_ctx: dados.num_ctx,
         keep_alive,
     })
+}
+
+/// Confere o texto de uma memória: não pode ficar em branco nem passar do tamanho máximo.
+/// Devolve o texto sem espaços nas pontas.
+fn validar_memoria(conteudo: &str) -> Resultado<&str> {
+    let conteudo = conteudo.trim();
+    if conteudo.is_empty() {
+        return Err(ErroBanco::Rejeitado(
+            "Escreva o que o modelo deve lembrar.".to_owned(),
+        ));
+    }
+    if conteudo.chars().count() > MEMORIA_MAXIMA {
+        return Err(ErroBanco::Rejeitado(format!(
+            "Uma memória pode ter no máximo {MEMORIA_MAXIMA} caracteres. Resuma o texto."
+        )));
+    }
+    Ok(conteudo)
 }
 
 /// Confere e normaliza os dados de um projeto: o nome é obrigatório (sem espaços nas pontas),
@@ -569,6 +590,7 @@ impl Banco {
     // ----- Memórias -----
 
     pub fn criar_memoria_global(&self, conteudo: &str) -> Resultado<Memoria> {
+        let conteudo = validar_memoria(conteudo)?;
         let id = novo_id();
         self.conexao.execute(
             "INSERT INTO memorias (id, escopo, projeto_id, conteudo)
@@ -579,6 +601,7 @@ impl Banco {
     }
 
     pub fn criar_memoria_de_projeto(&self, projeto_id: &str, conteudo: &str) -> Resultado<Memoria> {
+        let conteudo = validar_memoria(conteudo)?;
         let id = novo_id();
         self.conexao.execute(
             "INSERT INTO memorias (id, escopo, projeto_id, conteudo)
@@ -617,6 +640,7 @@ impl Banco {
     }
 
     pub fn atualizar_memoria(&self, id: &str, conteudo: &str) -> Resultado<Memoria> {
+        let conteudo = validar_memoria(conteudo)?;
         let alteradas = self.conexao.execute(
             &format!("UPDATE memorias SET conteudo = ?2, atualizado_em = {AGORA} WHERE id = ?1"),
             params![id, conteudo],

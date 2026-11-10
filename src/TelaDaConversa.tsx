@@ -166,6 +166,7 @@ function TelaDaConversa({ conversa }: Props) {
     emAndamento,
     erroDeEnvio,
     respostaCortada,
+    avisoDeContexto,
     regenerar,
     tentarDeNovo,
     excluirConversa,
@@ -236,6 +237,16 @@ function TelaDaConversa({ conversa }: Props) {
           <p role="status" className="aviso text-sm">
             O modelo parou porque a resposta chegou ao limite de tamanho.
             Aumente o contexto nos parâmetros para respostas maiores.
+          </p>
+        )}
+        {avisoDeContexto && (
+          <p role="status" className="aviso text-sm">
+            {avisoDeContexto.estimado >= avisoDeContexto.limite
+              ? "O contexto desta conversa passou do limite (cerca de "
+              : "O contexto desta conversa está quase cheio (cerca de "}
+            {avisoDeContexto.estimado} de {avisoDeContexto.limite} tokens). O
+            modelo pode deixar de ver as mensagens mais antigas. Aumente o
+            contexto em “Modelo e parâmetros”, se o modelo permitir.
           </p>
         )}
         {erroDeEnvio && (

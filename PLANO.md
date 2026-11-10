@@ -24,8 +24,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E07 | Instalação silenciosa do Ollama | E06 | concluída |
 | E08 | Onboarding e catálogo de modelos | E07 | concluída |
 | E09 | Projetos | E03, E04 | concluída |
-| E10 | Conversas e chat com streaming | E05, E09 | em revisão |
-| E11 | Memória manual (projeto e global) e injeção | E10 | pendente |
+| E10 | Conversas e chat com streaming | E05, E09 | concluída |
+| E11 | Memória manual (projeto e global) e injeção | E10 | em revisão |
 | E12 | Sugestão de memórias sob demanda | E11 | pendente |
 | E13 | Exportar e importar | E04, E11 | pendente |
 | E14 | Robustez transversal: erros amigáveis e recuperação | E07, E08, E10, E13 | pendente |
@@ -474,7 +474,15 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - Uma memória removida não aparece no contexto da próxima mensagem. **(falha)**
 - Memórias persistem depois de fechar e reabrir o app.
 
-**Decisões a tomar:** ordem de montagem do contexto (system prompt, global, projeto) e o que fazer quando o contexto montado se aproxima do `num_ctx`.
+**Decisões a tomar:** ordem de montagem do contexto (system prompt, global, projeto) e o que fazer quando o contexto montado se aproxima do `num_ctx`. _Decididas com o usuário, ver o Registro de decisões._
+
+**Como ficou (E11):**
+
+- **Banco:** nenhuma migração nova. A tabela `memorias` e as operações de criar, listar, editar e excluir já existiam desde a E04. O que entrou foi a validação do texto: sem espaços nas pontas, não pode ficar em branco e tem no máximo 2.000 caracteres (`MEMORIA_MAXIMA`).
+- **Contexto de cada envio:** `montar_contexto` junta numa única mensagem `system`, nesta ordem, as **instruções do projeto**, as **memórias globais** (bloco "Memórias globais (valem para qualquer projeto):") e as **memórias do projeto** (bloco "Memórias deste projeto:"), cada memória como item de lista. Bloco sem conteúdo é omitido, e sem nenhum bloco não há mensagem `system`. As memórias são lidas do banco **a cada envio**, na mesma leitura que pega o projeto e o histórico. Por isso editar ou excluir uma memória só muda as gerações seguintes, e nenhuma mensagem já gravada é tocada.
+- **Contexto perto do limite:** o app estima o tamanho do contexto enviado (1 token a cada 3 caracteres, mais 4 por mensagem, sem tokenizador) e, a partir de **80% do `num_ctx`**, a resposta traz um aviso. A tela mostra "O contexto desta conversa está quase cheio…" (ou "passou do limite…") e sugere aumentar o contexto em "Modelo e parâmetros". O app **não corta nem bloqueia nada**: o Ollama é quem descarta as mensagens mais antigas, e as instruções e memórias seguem em todo envio. O aviso some no envio seguinte.
+- **Comandos do Tauri:** `listar_memorias_globais`, `listar_memorias_do_projeto`, `criar_memoria`, `atualizar_memoria` e `excluir_memoria`.
+- **Interface:** tela de memórias (T06) com as abas "Deste projeto" e "Globais", aberta pelo "◇ Memória global" no fim da lateral ou pelo "Gerenciar memórias" no projeto. Cada memória tem "Editar" e "Remover", e há o campo "Nova memória" com contador de caracteres. **Remover é silencioso**: apaga na hora, sem diálogo de confirmação e sem nenhum aviso de "contexto mudou". Sem projeto aberto só existe a aba global. A lateral e o botão ficam desabilitados enquanto uma resposta é gerada, como no resto da E10.
 
 ### E12 — Sugestão de memórias sob demanda
 
@@ -610,6 +618,9 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Links nas respostas do modelo | Aparecem como texto, não clicáveis, e imagens não carregam. Não usa o plugin `opener` nem permissão nova no Tauri. Se for preciso abrir links no futuro, é uma mudança de escopo a aprovar | 2026-11-09 |
 | Parâmetros padrão da conversa | Temperatura 0,7, contexto (`num_ctx`) 8192 (limitado à janela do modelo) e `keep_alive` de 5 minutos, gravados em cada conversa nova | 2026-11-09 |
 | Resposta guardada pela metade | Se o usuário cancela ou a conexão cai com texto já recebido, o texto é guardado como mensagem `interrompida`. Ao regenerar, uma falha mantém a resposta antiga. Migração 2 do banco | 2026-11-09 |
+| Ordem do contexto montado (E11) | Uma única mensagem `system`, sempre a primeira: instruções do projeto, depois memórias globais, depois memórias do projeto (o mais específico por último, onde o modelo dá mais peso). Cada bloco tem título em português e as memórias vão em lista. Bloco vazio é omitido | 2026-11-09 |
+| Contexto perto do `num_ctx` (E11) | Só avisar: estimativa por caracteres, aviso a partir de 80% do `num_ctx`, sem cortar histórico nem bloquear o envio. O Ollama já descarta as mensagens mais antigas sozinho, e instruções e memórias seguem em todo envio. Cortar ou bloquear ficaria para depois, se o aviso se mostrar pouco | 2026-11-09 |
+| Tamanho e remoção de memórias (E11) | Máximo de 2.000 caracteres por memória (são fatos curtos que entram em todo envio). Remover apaga na hora, sem confirmação, porque o plano pede remoção silenciosa e a memória é um texto curto fácil de recriar | 2026-11-09 |
 | Dependências do chat (E10) | `react-markdown`, `remark-gfm` e `rehype-highlight`, todas já decididas na E03. O realce de código usa cores próprias (CSS), sem importar tema do `highlight.js`. Avisado no PR da E10 | 2026-11-09 |
 | Regras de validação do projeto | Nome obrigatório, com até 100 caracteres (contados como caracteres, e não bytes); instruções opcionais, com até 20.000 caracteres; nomes de projeto repetidos são permitidos; lista em ordem alfabética sem diferenciar maiúsculas. Os limites são defesa contra textos absurdos e podem mudar | 2026-11-09 |
 | Modelo herdado pelas conversas | Vale o modelo padrão do projeto; sem ele, o da primeira conversa criada no projeto que tenha modelo; sem nenhum, a tela pede a escolha. A conversa não grava o padrão: a regra é calculada a cada nova conversa | 2026-11-09 |
@@ -631,7 +642,6 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Decisão | Etapa que a resolve |
 | --- | --- |
 | Confirmar a versão mínima do Ollama (0.30.0) contra um Ollama real dessa versão. Na E06 só havia a 0.32.9 para testar | E15 (checklist manual) |
-| Ordem de montagem do contexto e limite do `num_ctx` | E11 |
 | Modelo e escopo das sugestões de memória | E12 |
 | Formato do export e política de importação | E13 |
 | Formato do instalador, assinatura de código, dados na desinstalação | E16 |
@@ -712,7 +722,7 @@ Requisição:
 
 Regras:
 
-- **Uma única mensagem `system`, sempre a primeira.** O conteúdo dela (system prompt do projeto e memórias) é montado a cada envio. A ordem interna é definida na E11.
+- **Uma única mensagem `system`, sempre a primeira.** O conteúdo dela é montado a cada envio, nesta ordem: instruções do projeto, memórias globais e memórias do projeto (decidido na E11).
 - **Histórico:** só `role` e `content`. O `thinking` de respostas anteriores **não é reenviado**.
 - **`think` não é enviado.** O modelo usa o padrão dele, e a UI mostra `thinking` apenas se o modelo o emitir. É isso que dispensa um toggle por conversa.
 - **`options`:** só `temperature` e `num_ctx`.

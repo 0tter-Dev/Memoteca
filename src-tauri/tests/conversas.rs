@@ -158,7 +158,9 @@ fn corpos_do_chat(servidor: &OllamaFalso) -> Vec<Value> {
 
 fn concluida(resultado: Result<DesfechoDaGeracao, FalhaDeGeracao>) -> (Mensagem, bool) {
     match resultado {
-        Ok(DesfechoDaGeracao::Concluida { mensagem, cortada }) => (mensagem, cortada),
+        Ok(DesfechoDaGeracao::Concluida {
+            mensagem, cortada, ..
+        }) => (mensagem, cortada),
         outro => panic!("deveria concluir: {outro:?}"),
     }
 }

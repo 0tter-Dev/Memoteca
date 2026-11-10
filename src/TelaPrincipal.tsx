@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useConversas } from "./estado/conversas";
 import { useProjetos } from "./estado/projetos";
 import TelaDaConversa from "./TelaDaConversa";
+import TelaDeMemorias from "./TelaDeMemorias";
 import FormularioDeProjeto from "./FormularioDeProjeto";
 import Sidebar from "./Sidebar";
 import type { Conversa, EstadoOllama, Projeto } from "./tipos";
@@ -17,6 +18,7 @@ const SEM_CONVERSAS: Conversa[] = [];
 
 function DetalheDoProjeto({ projeto }: { projeto: Projeto }) {
   const iniciarEdicao = useProjetos((estado) => estado.iniciarEdicao);
+  const abrirMemorias = useProjetos((estado) => estado.abrirMemorias);
   const criarConversa = useConversas((estado) => estado.criarConversa);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -58,6 +60,20 @@ function DetalheDoProjeto({ projeto }: { projeto: Projeto }) {
           {projeto.modeloPadrao ??
             "Não definido: vale o modelo da primeira conversa criada no projeto."}
         </p>
+      </section>
+
+      <section>
+        <h3 className="font-medium">Memórias do projeto</h3>
+        <p className="text-neutral-600 dark:text-neutral-400">
+          Fatos que o modelo lembra em toda conversa deste projeto.
+        </p>
+        <button
+          type="button"
+          onClick={() => abrirMemorias("projeto")}
+          className="mt-1 rounded border border-neutral-400 px-3 py-1"
+        >
+          Gerenciar memórias
+        </button>
       </section>
 
       <div className="space-y-2">
@@ -116,6 +132,8 @@ function TelaPrincipal({ ollama, erroDeDados }: Props) {
     );
   } else if (!carregado) {
     conteudo = <p role="status">Carregando os projetos…</p>;
+  } else if (modo === "memorias") {
+    conteudo = <TelaDeMemorias projeto={selecionado} />;
   } else if (modo === "novo") {
     conteudo = <FormularioDeProjeto key="novo" projeto={null} />;
   } else if (modo === "ver" && conversaAtiva) {

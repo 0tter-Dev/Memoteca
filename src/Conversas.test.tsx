@@ -678,6 +678,55 @@ describe("Conversas: envio com streaming", () => {
     ).toBeVisible();
   });
 
+  it("avisa quando o contexto está perto do limite, sem bloquear nada, e some no próximo envio", async () => {
+    let chamada = 0;
+    await abrirVazia({
+      gerador: async (_comando, _args, estado) => {
+        chamada += 1;
+        const lista = (estado.mensagens.c1 ??= []);
+        lista.push(
+          mensagem({
+            id: `u${chamada}`,
+            posicao: lista.length + 1,
+            papel: "user",
+            conteudo: "Oi",
+          }),
+        );
+        return {
+          estado: "concluida",
+          mensagem: null,
+          cortada: false,
+          contexto: chamada === 1 ? { estimado: 7000, limite: 8192 } : null,
+        };
+      },
+    });
+
+    await enviar("Oi");
+
+    const aviso = await screen.findByText(/está quase cheio/);
+    expect(aviso).toHaveTextContent("7000 de 8192 tokens");
+    expect(screen.getByLabelText("Mensagem")).toBeEnabled();
+
+    await enviar("Outra");
+
+    expect(screen.queryByText(/quase cheio/)).not.toBeInTheDocument();
+  });
+
+  it("diz que o contexto passou do limite quando a estimativa já o ultrapassa", async () => {
+    await abrirVazia({
+      gerador: async () => ({
+        estado: "concluida",
+        mensagem: null,
+        cortada: false,
+        contexto: { estimado: 9000, limite: 8192 },
+      }),
+    });
+
+    await enviar("Oi");
+
+    expect(await screen.findByText(/passou do limite/)).toBeVisible();
+  });
+
   it("depois de uma falha no meio, a resposta interrompida oferece tentar de novo (gerar outra)", async () => {
     let tentativa = 0;
     await abrirVazia({

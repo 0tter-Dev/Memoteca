@@ -11,6 +11,7 @@ use std::sync::Mutex;
 use crate::banco::modelos::TITULO_PADRAO_DA_CONVERSA;
 use crate::banco::{Banco, DadosConversa, ErroBanco, Mensagem, Papel};
 
+pub use contexto::AvisoDeContexto;
 pub use controle::{ControleDeGeracao, VagaDeGeracao};
 pub use geracao::{DesfechoDaGeracao, ErroGeracao, FalhaDeGeracao, ModoDeGeracao, gerar};
 pub use titulo::titulo_da_mensagem;

@@ -9,8 +9,11 @@ function mensagemDoErro(erro: unknown): string {
   return typeof erro === "string" ? erro : MENSAGEM_PADRAO;
 }
 
-/** O que a área principal mostra: o projeto, o formulário de um novo ou o de edição. */
-export type Modo = "ver" | "novo" | "editar";
+/** O que a área principal mostra: o projeto, o formulário de um novo ou o de edição, ou as memórias. */
+export type Modo = "ver" | "novo" | "editar" | "memorias";
+
+/** Aba aberta na tela de memórias. */
+export type AbaDeMemorias = "projeto" | "global";
 
 interface EstadoDeProjetos {
   projetos: Projeto[];
@@ -20,11 +23,14 @@ interface EstadoDeProjetos {
   erro: string | null;
   selecionadoId: string | null;
   modo: Modo;
+  abaDeMemorias: AbaDeMemorias;
 
   carregar: () => Promise<void>;
   selecionar: (id: string) => void;
   iniciarNovo: () => void;
   iniciarEdicao: () => void;
+  /** Abre a tela de memórias na aba dada. */
+  abrirMemorias: (aba: AbaDeMemorias) => void;
   cancelarFormulario: () => void;
   /** Salva (cria ou edita, conforme o modo). Devolve a mensagem de erro, ou `null`. */
   salvar: (dados: DadosProjeto) => Promise<string | null>;
@@ -38,6 +44,7 @@ const estadoInicial = {
   erro: null,
   selecionadoId: null,
   modo: "ver" as Modo,
+  abaDeMemorias: "projeto" as AbaDeMemorias,
 };
 
 export const useProjetos = create<EstadoDeProjetos>()((set, get) => ({
@@ -63,6 +70,7 @@ export const useProjetos = create<EstadoDeProjetos>()((set, get) => ({
   selecionar: (id) => set({ selecionadoId: id, modo: "ver" }),
   iniciarNovo: () => set({ modo: "novo" }),
   iniciarEdicao: () => set({ modo: "editar" }),
+  abrirMemorias: (aba) => set({ modo: "memorias", abaDeMemorias: aba }),
   cancelarFormulario: () => set({ modo: "ver" }),
 
   salvar: async (dados) => {

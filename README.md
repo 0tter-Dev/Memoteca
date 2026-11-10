@@ -43,7 +43,7 @@ Fora do escopo por enquanto: resumo acumulado do projeto, sincronização entre 
 
 ## Status
 
-Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) e **E07** (instalação silenciosa do Ollama) e **E08** (onboarding e catálogo de modelos) e **E09** (projetos) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
+Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) e **E07** (instalação silenciosa do Ollama) e **E08** (onboarding e catálogo de modelos) e **E09** (projetos) e **E10** (conversas e chat) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
 
 O app abre o banco local ao iniciar, aplica as migrações e mostra uma mensagem amigável se não conseguir.
 
@@ -57,7 +57,9 @@ Na primeira vez, o app guia o usuário por boas-vindas, Ollama, escolha de um mo
 
 O app tem a lateral com os projetos, e dá para criar, editar e excluir projetos (com confirmação), cada um com suas instruções (system prompt) e um modelo padrão.
 
-Etapa **E10** (conversas e chat com streaming) em revisão: dentro de um projeto dá para criar conversas e conversar com o modelo, com a resposta chegando em streaming, raciocínio recolhido, markdown, cancelar e gerar de novo. Cada conversa guarda o próprio modelo e parâmetros, e o histórico fica salvo. Ainda não há memórias. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
+Dentro de um projeto dá para criar conversas e conversar com o modelo, com a resposta chegando em streaming, raciocínio recolhido, markdown, cancelar e gerar de novo. Cada conversa guarda o próprio modelo e parâmetros, e o histórico fica salvo.
+
+Etapa **E11** (memória manual) em revisão: há uma tela de memórias, com as do projeto e as globais (criar, editar e remover). A cada mensagem enviada, o app junta as instruções do projeto, as memórias globais e as do projeto numa só mensagem `system`. Editar ou remover uma memória só vale para as próximas mensagens. Se o contexto da conversa chega perto do `num_ctx`, a tela avisa. Ainda não há sugestão automática de memórias. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
 
 ## Stack
 

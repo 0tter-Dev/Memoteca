@@ -22,6 +22,7 @@ pub use modelos::{
     Conversa, DadosConversa, DadosProjeto, EscopoMemoria, EstadoMensagem, Memoria, Mensagem, Papel,
     Projeto, ResumoExclusaoProjeto,
 };
+pub use repositorio::MEMORIA_MAXIMA;
 
 use migracoes::{MIGRACOES, Migracao};
 
