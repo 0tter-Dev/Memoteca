@@ -15,6 +15,8 @@ interface ProgressoInstalacao {
   totalEmBytes: number;
 }
 
+import { mensagemDoErro } from "./erros";
+
 const MENSAGEM_PADRAO =
   "Não foi possível instalar o Ollama. Feche o aplicativo, abra-o de novo e tente outra vez.";
 
@@ -55,7 +57,7 @@ function InstalarOllama({ aoConcluir }: Props) {
         setCancelada(true);
       }
     } catch (falha: unknown) {
-      setErro(typeof falha === "string" ? falha : MENSAGEM_PADRAO);
+      setErro(mensagemDoErro(falha, MENSAGEM_PADRAO));
     } finally {
       setInstalando(false);
       setProgresso(null);

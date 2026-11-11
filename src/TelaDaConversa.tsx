@@ -186,6 +186,13 @@ function TelaDaConversa({ conversa }: Props) {
   const ultima = mensagens[mensagens.length - 1];
   // Depois de uma falha, a última mensagem diz o que tentar de novo.
   const aguardandoResposta = ultima?.papel === "user";
+  // Ao reabrir uma conversa cuja última mensagem é do usuário, sem erro na tela: o app foi
+  // fechado (ou a conexão caiu) no meio da resposta.
+  const semResposta =
+    !gerando &&
+    aguardandoResposta &&
+    erroDeEnvio === null &&
+    ultima !== undefined;
   const podeTentarDeNovo =
     !gerando &&
     erroDeEnvio !== null &&
@@ -252,6 +259,22 @@ function TelaDaConversa({ conversa }: Props) {
             O modelo parou porque a resposta chegou ao limite de tamanho.
             Aumente o contexto nos parâmetros para respostas maiores.
           </p>
+        )}
+        {semResposta && (
+          <div role="status" className="aviso space-y-1 text-sm">
+            <p>
+              Esta mensagem ficou sem resposta. Isso acontece quando o Memoteca
+              é fechado, ou a conexão cai, antes de a resposta chegar. Sua
+              mensagem está guardada.
+            </p>
+            <button
+              type="button"
+              onClick={() => void tentarDeNovo()}
+              className="rounded border border-neutral-500 px-2 py-0.5"
+            >
+              Gerar resposta
+            </button>
+          </div>
         )}
         {avisoDeContexto && (
           <p role="status" className="aviso text-sm">

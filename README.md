@@ -43,7 +43,7 @@ Fora do escopo por enquanto: resumo acumulado do projeto, sincronização entre 
 
 ## Status
 
-Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) e **E07** (instalação silenciosa do Ollama) e **E08** (onboarding e catálogo de modelos) e **E09** (projetos) e **E10** (conversas e chat) e **E11** (memória manual) e **E12** (sugestão de memórias) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
+Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) e **E07** (instalação silenciosa do Ollama) e **E08** (onboarding e catálogo de modelos) e **E09** (projetos) e **E10** (conversas e chat) e **E11** (memória manual) e **E12** (sugestão de memórias) e **E13** (exportar e importar) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
 
 O app abre o banco local ao iniciar, aplica as migrações e mostra uma mensagem amigável se não conseguir.
 
@@ -63,7 +63,9 @@ Há uma tela de memórias, com as do projeto e as globais (criar, editar e remov
 
 O botão "Sugerir memórias" da conversa faz uma chamada extra ao modelo da própria conversa e abre uma lista de sugestões. Cada uma só vira memória quando você a aprova, escolhendo se vale para o projeto ou para todos. Rejeitar ou fechar a lista não guarda nada, e o histórico da conversa não muda.
 
-Etapa **E13** (exportar e importar) em revisão: em "Configurações", seção "Dados", dá para **exportar um backup** (um arquivo JSON com a versão do formato, com projetos, conversas, mensagens e memórias) e **importar** um backup. Importar **mescla**: adiciona só o que ainda não existe aqui, mantém como está o que já existe e não traz de volta o que você excluiu. É atômico: se falhar, nada fica importado pela metade. Um arquivo inválido, truncado ou de versão desconhecida é recusado sem alterar nada. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
+Em "Configurações", seção "Dados", dá para **exportar um backup** (um arquivo JSON com a versão do formato, com projetos, conversas, mensagens e memórias) e **importar** um backup. Importar **mescla**: adiciona só o que ainda não existe aqui, mantém como está o que já existe e não traz de volta o que você excluiu. É atômico: se falhar, nada fica importado pela metade. Um arquivo inválido, truncado ou de versão desconhecida é recusado sem alterar nada.
+
+Etapa **E14** (robustez) em revisão: se os dados não abrem (arquivo travado, protegido ou danificado), o app mostra um diálogo amigável com "Tentar de novo" (sem reiniciar) e "Abrir a pasta dos dados", e nada é apagado. O mesmo "Tentar de novo" vale quando a verificação do Ollama falha. Os detalhes técnicos dos erros nunca aparecem na tela: vão para o **log local** em `%APPDATA%\io.github.0tter-dev.memoteca\logs\memoteca.log` (até 3 arquivos de 1 MB, sem o texto das suas conversas). Uma conversa cuja última mensagem ficou sem resposta (por exemplo, o app foi fechado no meio) avisa e oferece "Gerar resposta". Testes conferem que toda mensagem de erro segue as regras do catálogo e que todo cenário do plano de robustez tem teste. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
 
 ## Stack
 

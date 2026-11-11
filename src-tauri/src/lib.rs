@@ -1,7 +1,9 @@
 pub mod banco;
+pub mod catalogo;
 pub mod conversas;
 pub mod instalador;
 pub mod intercambio;
+pub mod log;
 pub mod modelos;
 pub mod ollama;
 
@@ -30,15 +32,96 @@ use tauri::{Manager, RunEvent};
 use tauri_plugin_dialog::DialogExt;
 use tokio_util::sync::CancellationToken;
 
-/// Resultado de abrir o banco na inicialização. Em caso de falha guarda a mensagem
-/// amigável, que a interface mostra ao usuário.
-struct EstadoBanco(Result<Mutex<Banco>, String>);
+/// O banco de dados do app. Em caso de falha ao abrir guarda a mensagem amigável, que a
+/// interface mostra ao usuário. Como o que está aqui pode ser trocado (`tentar_abrir_banco`),
+/// o usuário se recupera de um banco que não abriu **sem precisar reiniciar o app**.
+struct EstadoBanco {
+    atual: Mutex<Result<Arc<Mutex<Banco>>, String>>,
+}
+
+impl EstadoBanco {
+    fn novo(resultado: Result<Mutex<Banco>, String>) -> Self {
+        Self {
+            atual: Mutex::new(resultado.map(Arc::new)),
+        }
+    }
+
+    /// O banco aberto, ou a mensagem amigável de por que não abriu.
+    fn obter(&self) -> Result<Arc<Mutex<Banco>>, String> {
+        self.atual
+            .lock()
+            .map_err(|_| ErroBanco::Interno("estado do banco".into()).mensagem_amigavel())?
+            .clone()
+    }
+
+    /// Tenta abrir o banco de novo se ele não está aberto. Se já está, não chama `abrir`.
+    fn tentar_reabrir(
+        &self,
+        abrir: impl FnOnce() -> Result<Mutex<Banco>, String>,
+    ) -> Result<(), String> {
+        let mut atual = self
+            .atual
+            .lock()
+            .map_err(|_| ErroBanco::Interno("estado do banco".into()).mensagem_amigavel())?;
+        if atual.is_ok() {
+            return Ok(());
+        }
+        let novo = abrir().map(Arc::new);
+        let resultado = novo.as_ref().map(|_| ()).map_err(Clone::clone);
+        *atual = novo;
+        resultado
+    }
+}
 
 /// A interface chama este comando ao abrir. `Ok` significa que os dados locais estão
 /// prontos, e `Err` traz a mensagem amigável em pt-BR.
 #[tauri::command]
 fn estado_do_banco(estado: tauri::State<'_, EstadoBanco>) -> Result<(), String> {
-    estado.0.as_ref().map(|_| ()).map_err(Clone::clone)
+    estado.obter().map(|_| ())
+}
+
+/// "Tentar de novo" depois de o banco não abrir: tenta abrir outra vez, sem reiniciar o app.
+/// Se já está aberto, não faz nada.
+#[tauri::command]
+fn tentar_abrir_banco(
+    app: tauri::AppHandle,
+    estado: tauri::State<'_, EstadoBanco>,
+) -> Result<(), String> {
+    estado.tentar_reabrir(|| abrir_banco(&app))
+}
+
+/// Abre a pasta dos dados (o banco, as cópias de segurança e o log) no Explorador de
+/// Arquivos, para o usuário achar o que precisa quando o banco não abre.
+#[tauri::command]
+fn abrir_pasta_de_dados(app: tauri::AppHandle) -> Result<(), String> {
+    let mensagem = "Não foi possível abrir a pasta dos dados. Abra o Explorador de Arquivos e procure a pasta do Memoteca dentro de AppData.";
+    let pasta = app.path().app_data_dir().map_err(|erro| {
+        crate::registrar!("não foi possível localizar a pasta de dados: {erro}");
+        mensagem.to_owned()
+    })?;
+    std::fs::create_dir_all(&pasta).map_err(|erro| {
+        crate::registrar!("não foi possível criar a pasta de dados: {erro}");
+        mensagem.to_owned()
+    })?;
+    abrir_no_explorador(&pasta).map_err(|erro| {
+        crate::registrar!("não foi possível abrir a pasta de dados: {erro}");
+        mensagem.to_owned()
+    })
+}
+
+#[cfg(windows)]
+fn abrir_no_explorador(pasta: &std::path::Path) -> std::io::Result<()> {
+    let mut filho = std::process::Command::new("explorer").arg(pasta).spawn()?;
+    // O Explorador devolve um código de saída qualquer. Só recolhe o processo.
+    std::thread::spawn(move || {
+        let _ = filho.wait();
+    });
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn abrir_no_explorador(_pasta: &std::path::Path) -> std::io::Result<()> {
+    Err(std::io::Error::other("só há suporte no Windows"))
 }
 
 /// Gerenciador do Ollama, compartilhado pelos comandos. O `Mutex` é assíncrono porque
@@ -91,7 +174,9 @@ async fn instalar_ollama(
             .lock()
             .map_err(|_| "Tente de novo.".to_owned())?;
         if vaga.is_some() {
-            return Err("Já há uma instalação do Ollama em andamento.".to_owned());
+            return Err(
+                "Já há uma instalação do Ollama em andamento. Espere ela terminar.".to_owned(),
+            );
         }
         *vaga = Some(cancelamento.clone());
     }
@@ -106,7 +191,7 @@ async fn instalar_ollama(
         Ok(ResultadoInstalacao::Concluida { .. }) => Ok("concluida"),
         Ok(ResultadoInstalacao::Cancelada) => Ok("cancelada"),
         Err(falha) => {
-            eprintln!("a instalação do Ollama falhou: {falha}");
+            crate::registrar!("a instalação do Ollama falhou: {falha}");
             Err(falha.mensagem_amigavel())
         }
     }
@@ -128,12 +213,12 @@ fn com_banco<T>(
     estado: &EstadoBanco,
     operacao: impl FnOnce(&Banco) -> Result<T, ErroBanco>,
 ) -> Result<T, String> {
-    let banco = estado.0.as_ref().map_err(Clone::clone)?;
+    let banco = estado.obter()?;
     let banco = banco
         .lock()
         .map_err(|_| ErroBanco::Interno("banco em uso".into()).mensagem_amigavel())?;
     operacao(&banco).map_err(|erro| {
-        eprintln!("operação no banco falhou: {erro}");
+        crate::registrar!("operação no banco falhou: {erro}");
         erro.mensagem_amigavel()
     })
 }
@@ -240,17 +325,16 @@ async fn executar_geracao(
     canal: &Channel<EventoDeGeracao>,
 ) -> Result<ResultadoDaGeracaoParaInterface, FalhaDaGeracaoParaInterface> {
     let banco = banco
-        .0
-        .as_ref()
-        .map_err(|mensagem| FalhaDaGeracaoParaInterface::simples(mensagem.clone()))?;
+        .obter()
+        .map_err(FalhaDaGeracaoParaInterface::simples)?;
     let vaga = conversas
         .controle
         .iniciar()
         .map_err(|erro| FalhaDaGeracaoParaInterface::simples(erro.mensagem_amigavel()))?;
 
     if let Some(texto) = texto {
-        registrar_mensagem_do_usuario(banco, conversa_id, texto).map_err(|erro| {
-            eprintln!("não foi possível gravar a mensagem: {erro}");
+        registrar_mensagem_do_usuario(&banco, conversa_id, texto).map_err(|erro| {
+            crate::registrar!("não foi possível gravar a mensagem: {erro}");
             FalhaDaGeracaoParaInterface::simples(erro.mensagem_amigavel())
         })?;
     }
@@ -274,7 +358,7 @@ async fn executar_geracao(
         .as_ref()
         .map_err(|mensagem| FalhaDaGeracaoParaInterface::simples(mensagem.clone()))?;
     let resultado = gerar(
-        banco,
+        &banco,
         cliente,
         conversa_id,
         modo,
@@ -307,7 +391,7 @@ async fn executar_geracao(
             contexto: None,
         }),
         Err(falha) => {
-            eprintln!("a geração da resposta falhou: {}", falha.erro);
+            crate::registrar!("a geração da resposta falhou: {}", falha.erro);
             Err(FalhaDaGeracaoParaInterface {
                 mensagem: falha.erro.mensagem_amigavel(),
                 mensagem_parcial: falha.mensagem_parcial,
@@ -539,7 +623,7 @@ async fn sugerir_memorias(
     conversas: tauri::State<'_, ConversasDoApp>,
     ollama_do_app: tauri::State<'_, OllamaDoApp>,
 ) -> Result<ResultadoDaSugestaoParaInterface, String> {
-    let banco = banco.0.as_ref().map_err(Clone::clone)?;
+    let banco = banco.obter()?;
     let vaga = conversas
         .controle
         .iniciar()
@@ -556,7 +640,7 @@ async fn sugerir_memorias(
     }
 
     let cliente = conversas.cliente.as_ref().map_err(Clone::clone)?;
-    match sugerir(banco, cliente, &conversa_id, vaga.cancelamento()).await {
+    match sugerir(&banco, cliente, &conversa_id, vaga.cancelamento()).await {
         Ok(DesfechoDaSugestao::Sugestoes(sugestoes)) => Ok(ResultadoDaSugestaoParaInterface {
             cancelada: false,
             sugestoes,
@@ -566,7 +650,7 @@ async fn sugerir_memorias(
             sugestoes: Vec::new(),
         }),
         Err(erro) => {
-            eprintln!("a sugestão de memórias falhou: {erro}");
+            crate::registrar!("a sugestão de memórias falhou: {erro}");
             Err(erro.mensagem_amigavel())
         }
     }
@@ -630,7 +714,7 @@ fn com_banco_exclusivo<T>(
         .lock()
         .map_err(|_| ErroBanco::Interno("banco em uso".into()).mensagem_amigavel())?;
     operacao(&banco).map_err(|erro| {
-        eprintln!("operação no banco falhou: {erro}");
+        crate::registrar!("operação no banco falhou: {erro}");
         erro.mensagem_amigavel()
     })
 }
@@ -642,8 +726,8 @@ async fn exportar_backup(
     janela: tauri::WebviewWindow,
     banco: tauri::State<'_, EstadoBanco>,
 ) -> Result<ResultadoDaExportacaoParaInterface, String> {
-    let banco = banco.0.as_ref().map_err(Clone::clone)?;
-    let data = com_banco_exclusivo(banco, Banco::data_local_de_hoje)?;
+    let banco = banco.obter()?;
+    let data = com_banco_exclusivo(&banco, Banco::data_local_de_hoje)?;
     let Some(destino) =
         escolher_arquivo(&app, &janela, Some(format!("memoteca-backup-{data}.json"))).await
     else {
@@ -655,9 +739,9 @@ async fn exportar_backup(
     };
 
     // A leitura do banco é rápida e o bloqueio é solto antes de gravar o arquivo.
-    let backup = com_banco_exclusivo(banco, Banco::montar_backup)?;
+    let backup = com_banco_exclusivo(&banco, Banco::montar_backup)?;
     let resumo = intercambio::gravar_backup(&backup, &destino).map_err(|erro| {
-        eprintln!("a exportação falhou: {erro}");
+        crate::registrar!("a exportação falhou: {erro}");
         erro.mensagem_amigavel()
     })?;
     Ok(ResultadoDaExportacaoParaInterface {
@@ -687,7 +771,7 @@ async fn analisar_backup(
     banco: tauri::State<'_, EstadoBanco>,
     pendente: tauri::State<'_, ImportacaoPendente>,
 ) -> Result<Option<AnaliseDoBackupParaInterface>, String> {
-    let banco = banco.0.as_ref().map_err(Clone::clone)?;
+    let banco = banco.obter()?;
     let Some(caminho) = escolher_arquivo(&app, &janela, None).await else {
         return Ok(None);
     };
@@ -700,7 +784,7 @@ async fn analisar_backup(
             .map_err(|_| "Não foi possível ler o arquivo. Tente de novo.".to_owned())?
     };
     let backup = lido.map_err(|erro| {
-        eprintln!("o backup escolhido foi recusado: {erro}");
+        crate::registrar!("o backup escolhido foi recusado: {erro}");
         erro.mensagem_amigavel()
     })?;
 
@@ -709,7 +793,7 @@ async fn analisar_backup(
             .lock()
             .map_err(|_| ErroBanco::Interno("banco em uso".into()).mensagem_amigavel())?;
         banco.analisar_backup(&backup).map_err(|erro| {
-            eprintln!("a análise do backup falhou: {erro}");
+            crate::registrar!("a análise do backup falhou: {erro}");
             erro.mensagem_amigavel()
         })?
     };
@@ -730,7 +814,7 @@ fn importar_backup_analisado(
     banco: tauri::State<'_, EstadoBanco>,
     pendente: tauri::State<'_, ImportacaoPendente>,
 ) -> Result<ResumoDaImportacao, String> {
-    let banco = banco.0.as_ref().map_err(Clone::clone)?;
+    let banco = banco.obter()?;
     let backup = pendente
         .0
         .lock()
@@ -741,7 +825,7 @@ fn importar_backup_analisado(
         .lock()
         .map_err(|_| ErroBanco::Interno("banco em uso".into()).mensagem_amigavel())?;
     banco.importar_backup(&backup).map_err(|erro| {
-        eprintln!("a importação falhou: {erro}");
+        crate::registrar!("a importação falhou: {erro}");
         erro.mensagem_amigavel()
     })
 }
@@ -760,7 +844,7 @@ const CONFIG_ONBOARDING_CONCLUIDO: &str = "onboarding_concluido";
 /// O usuário já concluiu o onboarding?
 #[tauri::command]
 fn onboarding_concluido(estado: tauri::State<'_, EstadoBanco>) -> Result<bool, String> {
-    let banco = estado.0.as_ref().map_err(Clone::clone)?;
+    let banco = estado.obter()?;
     let banco = banco.lock().map_err(|_| "Tente de novo.".to_owned())?;
     banco
         .obter_configuracao(CONFIG_ONBOARDING_CONCLUIDO)
@@ -771,7 +855,7 @@ fn onboarding_concluido(estado: tauri::State<'_, EstadoBanco>) -> Result<bool, S
 /// Marca o onboarding como concluído.
 #[tauri::command]
 fn concluir_onboarding(estado: tauri::State<'_, EstadoBanco>) -> Result<(), String> {
-    let banco = estado.0.as_ref().map_err(Clone::clone)?;
+    let banco = estado.obter()?;
     let banco = banco.lock().map_err(|_| "Tente de novo.".to_owned())?;
     banco
         .definir_configuracao(CONFIG_ONBOARDING_CONCLUIDO, "sim")
@@ -858,7 +942,7 @@ async fn baixar_modelo(
             .map_err(|_| FalhaDoDownloadParaInterface::simples("Tente de novo."))?;
         if vaga.is_some() {
             return Err(FalhaDoDownloadParaInterface::simples(
-                "Já há um download de modelo em andamento.",
+                "Já há um download de modelo em andamento. Espere ele terminar ou cancele.",
             ));
         }
         *vaga = Some(cancelamento.clone());
@@ -874,7 +958,7 @@ async fn baixar_modelo(
         Ok(ResultadoDoModelo::Concluido) => Ok("concluido"),
         Ok(ResultadoDoModelo::Cancelado) => Ok("cancelado"),
         Err(erro) => {
-            eprintln!("o download do modelo falhou: {erro}");
+            crate::registrar!("o download do modelo falhou: {erro}");
             Err(FalhaDoDownloadParaInterface {
                 mensagem: erro.mensagem_amigavel(),
                 pode_continuar: erro.pode_continuar(),
@@ -890,7 +974,7 @@ async fn listar_modelos_instalados(
 ) -> Result<Vec<String>, String> {
     let servico = estado.servico.as_ref().map_err(Clone::clone)?;
     servico.listar_instalados().await.map_err(|erro| {
-        eprintln!("não foi possível listar os modelos instalados: {erro}");
+        crate::registrar!("não foi possível listar os modelos instalados: {erro}");
         erro.mensagem_amigavel()
     })
 }
@@ -909,14 +993,14 @@ fn cancelar_download_modelo(estado: tauri::State<'_, ModelosDoApp>) {
 /// padrão, e só a mensagem amigável sobe para a interface.
 fn abrir_banco(app: &tauri::AppHandle) -> Result<Mutex<Banco>, String> {
     let pasta = app.path().app_data_dir().map_err(|erro| {
-        eprintln!("não foi possível localizar a pasta de dados: {erro}");
+        crate::registrar!("não foi possível localizar a pasta de dados: {erro}");
         banco::ErroBanco::Indisponivel(erro.to_string()).mensagem_amigavel()
     })?;
 
     Banco::abrir(&pasta.join("memoteca.db"), &pasta.join("backups"))
         .map(Mutex::new)
         .map_err(|erro| {
-            eprintln!("não foi possível abrir o banco de dados: {erro}");
+            crate::registrar!("não foi possível abrir o banco de dados: {erro}");
             erro.mensagem_amigavel()
         })
 }
@@ -939,20 +1023,23 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let estado = EstadoBanco(abrir_banco(app.handle()));
+            if let Ok(pasta) = app.path().app_data_dir() {
+                log::iniciar(&log::pasta_do_log(&pasta));
+            }
+            let estado = EstadoBanco::novo(abrir_banco(app.handle()));
             app.manage(estado);
             app.manage(ImportacaoPendente(Mutex::new(None)));
 
             let ollama = GerenciadorOllama::novo()
                 .map(tokio::sync::Mutex::new)
                 .map_err(|erro| {
-                    eprintln!("não foi possível preparar o gerenciador do Ollama: {erro}");
+                    crate::registrar!("não foi possível preparar o gerenciador do Ollama: {erro}");
                     erro.mensagem_amigavel()
                 });
             app.manage(OllamaDoApp(ollama));
 
             let instalador = InstaladorDoOllama::novo(Arc::new(DetectorReal)).map_err(|erro| {
-                eprintln!("não foi possível preparar o instalador do Ollama: {erro}");
+                crate::registrar!("não foi possível preparar o instalador do Ollama: {erro}");
                 erro.mensagem_amigavel()
             });
             app.manage(InstalacaoDoApp {
@@ -964,8 +1051,8 @@ pub fn run() {
                 .map_err(|erro| erro.mensagem_amigavel())
                 .and_then(|cliente| {
                     let catalogo = modelos::catalogo_embutido().map_err(|erro| {
-                        eprintln!("o catálogo de modelos é inválido: {erro}");
-                        "Não foi possível carregar a lista de modelos.".to_owned()
+                        crate::registrar!("o catálogo de modelos é inválido: {erro}");
+                        "Não foi possível carregar a lista de modelos. Feche o aplicativo e abra-o de novo.".to_owned()
                     })?;
                     Ok(ServicoDeModelos::novo(
                         cliente,
@@ -986,6 +1073,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             estado_do_banco,
+            tentar_abrir_banco,
+            abrir_pasta_de_dados,
             preparar_ollama,
             instalar_ollama,
             cancelar_instalacao_ollama,
@@ -1036,4 +1125,86 @@ pub fn run() {
                 gerenciador.encerrar_se_iniciado_pelo_app();
             }
         });
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    fn pasta_nova() -> std::path::PathBuf {
+        let pasta =
+            std::env::temp_dir().join(format!("memoteca-estado-do-banco-{}", banco::id::novo_id()));
+        std::fs::create_dir_all(&pasta).unwrap();
+        pasta
+    }
+
+    fn abrir_em(pasta: &std::path::Path) -> Result<Mutex<Banco>, String> {
+        Banco::abrir(&pasta.join("memoteca.db"), &pasta.join("backups"))
+            .map(Mutex::new)
+            .map_err(|erro| erro.mensagem_amigavel())
+    }
+
+    /// R26: o banco não abre, o app mostra a mensagem amigável, os dados **não são apagados**
+    /// e, resolvido o problema, "tentar de novo" abre o banco **sem reiniciar o app**.
+    #[test]
+    fn r26_banco_que_nao_abre_se_recupera_com_tentar_de_novo_sem_reiniciar() {
+        let pasta = pasta_nova();
+        let arquivo = pasta.join("memoteca.db");
+        // Um arquivo que não é um banco de dados (ou que está danificado).
+        std::fs::write(&arquivo, b"isto nao e um banco sqlite, mas e do usuario").unwrap();
+        let estado = EstadoBanco::novo(abrir_em(&pasta));
+
+        // Aberto o app: só a mensagem amigável, sem texto do SQLite.
+        let erro = estado.obter().map(|_| ()).unwrap_err();
+        assert!(erro.contains("Seus dados não foram apagados"), "{erro}");
+        for tecnico in ["SQLITE", "sqlite", "not a database", "NotADatabase"] {
+            assert!(!erro.contains(tecnico), "{erro}");
+        }
+        // O arquivo do usuário continua lá, intacto.
+        assert_eq!(
+            std::fs::read(&arquivo).unwrap(),
+            b"isto nao e um banco sqlite, mas e do usuario"
+        );
+
+        // Ainda com o problema, tentar de novo falha com a mesma mensagem amigável.
+        let de_novo = estado.tentar_reabrir(|| abrir_em(&pasta)).unwrap_err();
+        assert!(
+            de_novo.contains("Seus dados não foram apagados"),
+            "{de_novo}"
+        );
+
+        // O usuário resolve (aqui, tira o arquivo do lugar) e tenta de novo.
+        std::fs::rename(&arquivo, pasta.join("guardado.db")).unwrap();
+        estado.tentar_reabrir(|| abrir_em(&pasta)).unwrap();
+
+        // O app passou a funcionar na hora, sem reiniciar.
+        let banco = estado.obter().unwrap();
+        let banco = banco.lock().unwrap();
+        banco
+            .criar_projeto(&banco::DadosProjeto {
+                nome: "Funciona".into(),
+                system_prompt: String::new(),
+                modelo_padrao: None,
+            })
+            .unwrap();
+        assert_eq!(banco.listar_projetos().unwrap().len(), 1);
+        drop(banco);
+        let _ = std::fs::remove_dir_all(&pasta);
+    }
+
+    #[test]
+    fn tentar_de_novo_com_o_banco_ja_aberto_nao_abre_outro() {
+        let estado = EstadoBanco::novo(Ok(Mutex::new(Banco::em_memoria().unwrap())));
+        let mut chamadas = 0;
+
+        estado
+            .tentar_reabrir(|| {
+                chamadas += 1;
+                Err("não deveria ser chamado".to_owned())
+            })
+            .unwrap();
+
+        assert_eq!(chamadas, 0);
+        assert!(estado.obter().is_ok());
+    }
 }

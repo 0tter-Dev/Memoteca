@@ -307,7 +307,7 @@ impl ClienteOllama {
             cancelamento,
             |linha| {
                 let dados: LinhaChat = serde_json::from_slice(linha)
-                    .map_err(|erro| ErroOllama::RespostaInvalida(erro.to_string()))?;
+                    .map_err(|erro| ErroOllama::RespostaInvalida(detalhe_do_json(&erro)))?;
                 if let Some(detalhe) = dados.error {
                     return Err(ErroOllama::ErroDoOllama(detalhe));
                 }
@@ -382,7 +382,7 @@ impl ClienteOllama {
                 .await
                 .map_err(|erro| erro_de_transporte(&erro))?;
             let linha: LinhaChat = serde_json::from_slice(&bytes)
-                .map_err(|erro| ErroOllama::RespostaInvalida(erro.to_string()))?;
+                .map_err(|erro| ErroOllama::RespostaInvalida(detalhe_do_json(&erro)))?;
             if let Some(detalhe) = linha.error {
                 return Err(ErroOllama::ErroDoOllama(detalhe));
             }
@@ -521,6 +521,18 @@ where
 fn indica_modelo_inexistente(detalhe: &str) -> bool {
     let detalhe = detalhe.to_lowercase();
     detalhe.contains("file does not exist") || detalhe.contains("not found")
+}
+
+/// O detalhe de um JSON de chat que não pôde ser lido, para o log. Fala só do tipo e do lugar
+/// do problema: o texto do erro do serde cita o valor que não bateu, e numa conversa esse valor
+/// é o que o usuário escreveu ou o que o modelo respondeu.
+fn detalhe_do_json(erro: &serde_json::Error) -> String {
+    format!(
+        "JSON do chat inválido ({:?}) na linha {}, coluna {}",
+        erro.classify(),
+        erro.line(),
+        erro.column()
+    )
 }
 
 /// Traduz uma falha de rede para o erro tipado.

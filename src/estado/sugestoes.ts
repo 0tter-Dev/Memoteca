@@ -2,13 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { EscopoDeMemoria, ResultadoDaSugestao } from "../tipos";
 import { useMemorias } from "./memorias";
-
-const MENSAGEM_PADRAO =
-  "Não foi possível concluir. Feche o aplicativo, abra-o de novo e tente outra vez.";
-
-function mensagemDoErro(erro: unknown): string {
-  return typeof erro === "string" ? erro : MENSAGEM_PADRAO;
-}
+import { mensagemDoErro } from "../erros";
 
 /** Uma sugestão na tela, com o escopo que o usuário escolheu para ela. */
 export interface Sugestao {

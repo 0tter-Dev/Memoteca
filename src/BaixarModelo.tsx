@@ -6,6 +6,8 @@ import {
   type ProgressoDoModelo,
 } from "./tipos";
 
+import { mensagemDaFalha } from "./erros";
+
 const MENSAGEM_PADRAO =
   "Não foi possível baixar o modelo. Feche o aplicativo, abra-o de novo e tente outra vez.";
 
@@ -51,10 +53,7 @@ function BaixarModelo({ nome, aoConcluir, aoEscolherOutro }: Props) {
     } catch (erro: unknown) {
       const tipada = erro as Partial<FalhaDoDownload> | null;
       setFalha({
-        mensagem:
-          typeof tipada?.mensagem === "string"
-            ? tipada.mensagem
-            : MENSAGEM_PADRAO,
+        mensagem: mensagemDaFalha(erro, MENSAGEM_PADRAO),
         podeContinuar: tipada?.podeContinuar === true,
       });
     } finally {

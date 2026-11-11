@@ -1,6 +1,7 @@
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { mensagemDoErro } from "./erros";
 import type { Projeto, ResumoExclusaoProjeto } from "./tipos";
 
 interface Props {
@@ -34,9 +35,10 @@ function ConfirmarExclusao({ projeto, aoConfirmar, aoCancelar }: Props) {
       .catch((falha: unknown) => {
         if (ativo) {
           setErro(
-            typeof falha === "string"
-              ? falha
-              : "Não foi possível verificar o que será apagado.",
+            mensagemDoErro(
+              falha,
+              "Não foi possível verificar o que será apagado.",
+            ),
           );
         }
       });

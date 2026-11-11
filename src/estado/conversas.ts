@@ -5,17 +5,10 @@ import type {
   Conversa,
   DadosConversa,
   EventoDeGeracao,
-  FalhaDaGeracao,
   Mensagem,
   ResultadoDaGeracao,
 } from "../tipos";
-
-const MENSAGEM_PADRAO =
-  "Não foi possível concluir. Feche o aplicativo, abra-o de novo e tente outra vez.";
-
-function mensagemDoErro(erro: unknown): string {
-  return typeof erro === "string" ? erro : MENSAGEM_PADRAO;
-}
+import { mensagemDaFalha, mensagemDoErro } from "../erros";
 
 /** Texto que chegou até agora da resposta em andamento. */
 export interface RespostaEmAndamento {
@@ -144,11 +137,7 @@ export const useConversas = create<EstadoDeConversas>()((set, get) => {
       cortada = resultado.cortada;
       avisoDeContexto = resultado.contexto ?? null;
     } catch (erro: unknown) {
-      const tipada = erro as Partial<FalhaDaGeracao> | null;
-      falha =
-        typeof tipada?.mensagem === "string"
-          ? tipada.mensagem
-          : MENSAGEM_PADRAO;
+      falha = mensagemDaFalha(erro);
     }
 
     await recarregarMensagens(id);

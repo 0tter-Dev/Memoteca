@@ -488,6 +488,28 @@ async fn r19_json_invalido_no_stream_da_erro_tipado_e_preserva_o_parcial() {
     assert!(!falha.erro.mensagem_amigavel().contains("json"));
 }
 
+/// O detalhe técnico (que vai para o log) de uma linha que não pôde ser lida não cita o valor
+/// que não bateu: numa conversa, esse valor é o que o usuário escreveu ou o modelo respondeu.
+#[tokio::test]
+async fn o_detalhe_de_uma_linha_invalida_nao_cita_o_conteudo_da_conversa() {
+    let servidor = servidor_com_chat(Resposta::linhas(&[
+        &linha_conteudo("ok"),
+        r#"{"message":{"content":"texto"},"done":"SEGREDO-DA-CONVERSA"}"#,
+    ]))
+    .await;
+
+    let (resultado, _) = conversar(&cliente(&servidor.url()), &pedido()).await;
+
+    let falha = resultado.unwrap_err();
+    assert!(matches!(falha.erro, ErroOllama::RespostaInvalida(_)));
+    assert!(
+        !falha.erro.to_string().contains("SEGREDO"),
+        "{}",
+        falha.erro
+    );
+    assert!(!format!("{:?}", falha.erro).contains("SEGREDO"));
+}
+
 #[tokio::test]
 async fn linha_com_formato_inesperado_tambem_e_resposta_invalida() {
     let servidor = servidor_com_chat(Resposta::linhas(&[

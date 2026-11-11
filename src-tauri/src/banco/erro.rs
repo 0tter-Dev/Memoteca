@@ -63,10 +63,10 @@ impl ErroBanco {
                 do Memoteca. Atualize o aplicativo para abri-los. Nada foi alterado."
                 .to_owned(),
             Self::NaoEncontrado => {
-                "Não encontramos este item. Ele pode ter sido excluído.".to_owned()
+                "Não encontramos este item. Ele pode ter sido excluído. Escolha outro na lista.".to_owned()
             }
             Self::Invalido(_) => {
-                "Não foi possível salvar: os dados informados não são válidos.".to_owned()
+                "Não foi possível salvar: os dados informados não são válidos. Confira o que foi preenchido e tente de novo.".to_owned()
             }
             Self::Rejeitado(mensagem) => mensagem.clone(),
             Self::Interno(_) => {
