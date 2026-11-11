@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useConversas } from "./estado/conversas";
 import { useProjetos } from "./estado/projetos";
 import TelaDaConversa from "./TelaDaConversa";
+import TelaDeConfiguracoes from "./TelaDeConfiguracoes";
 import TelaDeMemorias from "./TelaDeMemorias";
 import FormularioDeProjeto from "./FormularioDeProjeto";
 import Sidebar from "./Sidebar";
@@ -132,6 +133,8 @@ function TelaPrincipal({ ollama, erroDeDados }: Props) {
     );
   } else if (!carregado) {
     conteudo = <p role="status">Carregando os projetos…</p>;
+  } else if (modo === "configuracoes") {
+    conteudo = <TelaDeConfiguracoes />;
   } else if (modo === "memorias") {
     conteudo = <TelaDeMemorias projeto={selecionado} />;
   } else if (modo === "novo") {

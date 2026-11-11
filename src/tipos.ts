@@ -150,6 +150,43 @@ export interface DetalhesDoModelo {
   suportaRaciocinio: boolean;
 }
 
+/** Quantos itens de um tipo, por destino na importação de um backup. */
+export interface Contagem {
+  /** Seriam (ou foram) adicionados. */
+  novos: number;
+  /** O ID já existe aqui, então o que está aqui fica como está. */
+  jaExistem: number;
+  /** Foram excluídos neste computador (ou dependem de algo excluído) e não voltam. */
+  ignorados: number;
+}
+
+export interface ResumoDaImportacao {
+  projetos: Contagem;
+  conversas: Contagem;
+  mensagens: Contagem;
+  memorias: Contagem;
+}
+
+/** O que a importação faria com o backup escolhido. Nada foi gravado ainda. */
+export interface AnaliseDoBackup {
+  caminho: string;
+  /** Quando o backup foi feito (ISO 8601, UTC). */
+  exportadoEm: string;
+  resumo: ResumoDaImportacao;
+}
+
+export interface ResultadoDaExportacao {
+  /** O usuário fechou a janela sem escolher onde salvar. Nada foi gravado. */
+  cancelado: boolean;
+  caminho: string | null;
+  resumo: {
+    projetos: number;
+    conversas: number;
+    mensagens: number;
+    memorias: number;
+  } | null;
+}
+
 /** Uma sugestão de memória do modelo, ainda sem escopo: o usuário escolhe ao aprovar. */
 export interface SugestaoDeMemoria {
   texto: string;

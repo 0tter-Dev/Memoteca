@@ -51,7 +51,7 @@ pub fn keep_alive_valido(texto: &str) -> bool {
 
 /// Confere e normaliza os dados de uma conversa: título obrigatório, modelo com nome válido e
 /// parâmetros dentro dos limites.
-fn validar_conversa(dados: &DadosConversa) -> Resultado<DadosConversa> {
+pub(super) fn validar_conversa(dados: &DadosConversa) -> Resultado<DadosConversa> {
     let titulo = dados.titulo.trim();
     if titulo.is_empty() {
         return Err(ErroBanco::Rejeitado("Dê um título à conversa.".to_owned()));
@@ -105,7 +105,7 @@ fn validar_conversa(dados: &DadosConversa) -> Resultado<DadosConversa> {
 
 /// Confere o texto de uma memória: não pode ficar em branco nem passar do tamanho máximo.
 /// Devolve o texto sem espaços nas pontas.
-fn validar_memoria(conteudo: &str) -> Resultado<&str> {
+pub(super) fn validar_memoria(conteudo: &str) -> Resultado<&str> {
     let conteudo = conteudo.trim();
     if conteudo.is_empty() {
         return Err(ErroBanco::Rejeitado(
@@ -122,7 +122,7 @@ fn validar_memoria(conteudo: &str) -> Resultado<&str> {
 
 /// Confere e normaliza os dados de um projeto: o nome é obrigatório (sem espaços nas pontas),
 /// os textos têm tamanho máximo e o modelo padrão, se houver, precisa ser um nome válido.
-fn validar_projeto(dados: &DadosProjeto) -> Resultado<DadosProjeto> {
+pub(super) fn validar_projeto(dados: &DadosProjeto) -> Resultado<DadosProjeto> {
     let nome = dados.nome.trim();
     if nome.is_empty() {
         return Err(ErroBanco::Rejeitado("Dê um nome ao projeto.".to_owned()));
@@ -161,7 +161,7 @@ fn contagem(valor: i64) -> u64 {
     u64::try_from(valor).unwrap_or_default()
 }
 
-fn projeto_da_linha(linha: &Row<'_>) -> rusqlite::Result<Projeto> {
+pub(super) fn projeto_da_linha(linha: &Row<'_>) -> rusqlite::Result<Projeto> {
     Ok(Projeto {
         id: linha.get("id")?,
         nome: linha.get("nome")?,
@@ -172,7 +172,7 @@ fn projeto_da_linha(linha: &Row<'_>) -> rusqlite::Result<Projeto> {
     })
 }
 
-fn conversa_da_linha(linha: &Row<'_>) -> rusqlite::Result<Conversa> {
+pub(super) fn conversa_da_linha(linha: &Row<'_>) -> rusqlite::Result<Conversa> {
     Ok(Conversa {
         id: linha.get("id")?,
         projeto_id: linha.get("projeto_id")?,
@@ -186,7 +186,7 @@ fn conversa_da_linha(linha: &Row<'_>) -> rusqlite::Result<Conversa> {
     })
 }
 
-fn mensagem_da_linha(linha: &Row<'_>) -> rusqlite::Result<Mensagem> {
+pub(super) fn mensagem_da_linha(linha: &Row<'_>) -> rusqlite::Result<Mensagem> {
     let papel: String = linha.get("papel")?;
     let estado: String = linha.get("estado")?;
     Ok(Mensagem {
@@ -204,7 +204,7 @@ fn mensagem_da_linha(linha: &Row<'_>) -> rusqlite::Result<Mensagem> {
     })
 }
 
-fn memoria_da_linha(linha: &Row<'_>) -> rusqlite::Result<Memoria> {
+pub(super) fn memoria_da_linha(linha: &Row<'_>) -> rusqlite::Result<Memoria> {
     let escopo: String = linha.get("escopo")?;
     Ok(Memoria {
         id: linha.get("id")?,
