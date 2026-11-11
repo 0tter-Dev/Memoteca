@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { reiniciarConversas } from "./estado/conversas";
 import { reiniciarProjetos } from "./estado/projetos";
@@ -725,6 +732,59 @@ describe("Conversas: envio com streaming", () => {
     await enviar("Oi");
 
     expect(await screen.findByText(/passou do limite/)).toBeVisible();
+  });
+
+  it("R33: ao reabrir uma conversa cuja última mensagem ficou sem resposta (app fechado no meio), avisa e oferece gerar a resposta", async () => {
+    const fake = simularBackend({
+      conversas: [conversa({ id: "c1", titulo: "Minha conversa" })],
+      mensagens: {
+        c1: [mensagem({ id: "u1", papel: "user", conteudo: "Pergunta longa" })],
+      },
+    });
+    renderizar();
+    await abrirConversa("Minha conversa");
+
+    const aviso = await screen.findByText(/ficou sem resposta/);
+    expect(aviso).toBeVisible();
+    expect(screen.getByText("Pergunta longa")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    await clicar(botao("Gerar resposta"));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/ficou sem resposta/)).not.toBeInTheDocument(),
+    );
+    expect(chamadas("gerar_resposta_pendente")).toHaveLength(1);
+    expect(fake.mensagens.c1).toHaveLength(2);
+    expect(screen.getByText("Olá, mundo!")).toBeVisible();
+  });
+
+  it("R33: com a última mensagem respondida, ou numa conversa vazia, não há aviso de resposta pendente", async () => {
+    simularBackend({
+      conversas: [
+        conversa({ id: "c1", titulo: "Respondida" }),
+        conversa({ id: "c2", titulo: "Vazia" }),
+      ],
+      mensagens: {
+        c1: [
+          mensagem({ id: "u1", papel: "user", conteudo: "Oi" }),
+          mensagem({
+            id: "a1",
+            posicao: 2,
+            papel: "assistant",
+            conteudo: "Olá!",
+          }),
+        ],
+      },
+    });
+    renderizar();
+
+    await abrirConversa("Respondida");
+    expect(await screen.findByText("Olá!")).toBeVisible();
+    expect(screen.queryByText(/ficou sem resposta/)).not.toBeInTheDocument();
+
+    await abrirConversa("Vazia");
+    expect(screen.queryByText(/ficou sem resposta/)).not.toBeInTheDocument();
   });
 
   it("depois de uma falha no meio, a resposta interrompida oferece tentar de novo (gerar outra)", async () => {

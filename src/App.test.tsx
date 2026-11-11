@@ -1,4 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -26,7 +32,15 @@ function simularBackend({
   banco = () => Promise.resolve(),
   onboarding = () => Promise.resolve(true),
   ollama = () => Promise.resolve(ollamaPronto),
-}: { banco?: Resposta; onboarding?: Resposta; ollama?: Resposta } = {}) {
+  reabrir = () => Promise.resolve(),
+  pasta = () => Promise.resolve(),
+}: {
+  banco?: Resposta;
+  onboarding?: Resposta;
+  ollama?: Resposta;
+  reabrir?: Resposta;
+  pasta?: Resposta;
+} = {}) {
   invoke.mockImplementation((comando: string) => {
     switch (comando) {
       case "estado_do_banco":
@@ -35,6 +49,10 @@ function simularBackend({
         return onboarding();
       case "preparar_ollama":
         return ollama();
+      case "tentar_abrir_banco":
+        return reabrir();
+      case "abrir_pasta_de_dados":
+        return pasta();
       case "listar_projetos":
         return Promise.resolve([]);
       default:
@@ -217,5 +235,153 @@ describe("App e o onboarding", () => {
     expect(
       await screen.findByRole("heading", { name: "Bem-vindo ao Memoteca" }),
     ).toBeVisible();
+  });
+});
+
+const MENSAGEM_DO_BANCO =
+  "Não foi possível abrir os dados do Memoteca. Seus dados não foram apagados.";
+
+describe("R26: os dados não abrem", () => {
+  beforeEach(() => {
+    invoke.mockReset();
+  });
+
+  it("mostra um diálogo amigável com tentar de novo e a pasta dos dados, sem abrir o app", async () => {
+    simularBackend({ banco: () => Promise.reject(MENSAGEM_DO_BANCO) });
+    render(<App />);
+
+    const dialogo = await screen.findByRole("alertdialog");
+    expect(dialogo).toHaveTextContent("Não foi possível abrir seus dados");
+    expect(dialogo).toHaveTextContent(MENSAGEM_DO_BANCO);
+    expect(dialogo).toHaveTextContent("Seus dados continuam no computador");
+    expect(
+      screen.getByRole("button", { name: "Tentar de novo" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Abrir a pasta dos dados" }),
+    ).toBeEnabled();
+    // Sem os dados, o resto do app não aparece.
+    expect(screen.queryByText("Nenhum projeto ainda")).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+  });
+
+  it("tentar de novo abre os dados sem reiniciar o app e leva ao app", async () => {
+    let tentativas = 0;
+    simularBackend({
+      banco: () => Promise.reject(MENSAGEM_DO_BANCO),
+      reabrir: () => {
+        tentativas += 1;
+        return tentativas === 1
+          ? Promise.reject(MENSAGEM_DO_BANCO)
+          : Promise.resolve();
+      },
+    });
+    render(<App />);
+    await screen.findByRole("alertdialog");
+
+    // A primeira tentativa continua falhando: o diálogo fica, com a mesma mensagem.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    });
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent(
+      MENSAGEM_DO_BANCO,
+    );
+    expect(
+      screen.getByRole("button", { name: "Tentar de novo" }),
+    ).toBeEnabled();
+
+    // O problema foi resolvido: a segunda tentativa funciona, na mesma sessão.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    });
+    expect(await screen.findByText("Nenhum projeto ainda")).toBeVisible();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(
+      invoke.mock.calls.filter(([c]) => c === "tentar_abrir_banco"),
+    ).toHaveLength(2);
+  });
+
+  it("a tentativa que falha com erro técnico mostra a mensagem padrão, nunca o erro cru", async () => {
+    simularBackend({
+      banco: () => Promise.reject(MENSAGEM_DO_BANCO),
+      reabrir: () =>
+        Promise.reject(
+          "rusqlite::Error: SQLITE_NOTADB: file is not a database",
+        ),
+    });
+    render(<App />);
+    await screen.findByRole("alertdialog");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    });
+
+    const alerta = await screen.findByRole("alertdialog");
+    expect(alerta).toHaveTextContent("Não foi possível verificar os dados");
+    expect(alerta).not.toHaveTextContent("SQLITE");
+    expect(alerta).not.toHaveTextContent("rusqlite");
+  });
+
+  it("abrir a pasta dos dados chama o backend, e uma falha vira mensagem amigável", async () => {
+    let falhar = false;
+    simularBackend({
+      banco: () => Promise.reject(MENSAGEM_DO_BANCO),
+      pasta: () =>
+        falhar
+          ? Promise.reject("Error: os error 2 (explorer.exe)")
+          : Promise.resolve(),
+    });
+    render(<App />);
+    await screen.findByRole("alertdialog");
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Abrir a pasta dos dados" }),
+      );
+    });
+    expect(
+      invoke.mock.calls.filter(([c]) => c === "abrir_pasta_de_dados"),
+    ).toHaveLength(1);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+
+    falhar = true;
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Abrir a pasta dos dados" }),
+      );
+    });
+    const alertas = await screen.findAllByRole("alert");
+    expect(alertas[alertas.length - 1]).toHaveTextContent(
+      "Não foi possível abrir a pasta dos dados.",
+    );
+    expect(alertas[alertas.length - 1]).not.toHaveTextContent("os error");
+  });
+});
+
+describe("Falha ao verificar o Ollama", () => {
+  beforeEach(() => {
+    invoke.mockReset();
+  });
+
+  it("oferece tentar de novo, e o app segue sem reiniciar quando o Ollama volta", async () => {
+    let chamadas = 0;
+    simularBackend({
+      ollama: () => {
+        chamadas += 1;
+        return chamadas === 1
+          ? Promise.reject(new TypeError("Cannot read properties of undefined"))
+          : Promise.resolve(ollamaPronto);
+      },
+    });
+    render(<App />);
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).toHaveTextContent("Não foi possível verificar o Ollama.");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    });
+
+    expect(await screen.findByText("Nenhum projeto ainda")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

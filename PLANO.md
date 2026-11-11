@@ -27,8 +27,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E10 | Conversas e chat com streaming | E05, E09 | concluída |
 | E11 | Memória manual (projeto e global) e injeção | E10 | concluída |
 | E12 | Sugestão de memórias sob demanda | E11 | concluída |
-| E13 | Exportar e importar | E04, E11 | em revisão |
-| E14 | Robustez transversal: erros amigáveis e recuperação | E07, E08, E10, E13 | pendente |
+| E13 | Exportar e importar | E04, E11 | concluída |
+| E14 | Robustez transversal: erros amigáveis e recuperação | E07, E08, E10, E13 | em revisão |
 | E15 | Testes funcionais ponta a ponta do MVP | E14 | pendente |
 | E16 | Empacotamento e release | E15 | pendente |
 
@@ -561,6 +561,19 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - Cobertos: disco cheio, porta ocupada, download interrompido, instalação parcial, Ollama caindo durante o streaming, banco indisponível e arquivo de importação inválido. **(falha)**
 - Depois de cada falha coberta, o app continua utilizável sem precisar ser reiniciado, exceto quando isso for documentado como limitação aprovada pelo usuário.
 
+**Decisões a tomar:** local e retenção do log, o que fazer quando o banco não abre e a forma do catálogo de mensagens. _Decididas com o usuário, ver o Registro de decisões._
+
+**Como ficou (E14):**
+
+- **Log local:** o módulo `log` grava os detalhes técnicos em `logs/memoteca.log`, na pasta de dados (`%APPDATA%\io.github.0tter-dev.memoteca`), no lugar dos `eprintln!`. Cada arquivo vai até **1 MB** e ficam os **3 mais recentes** (`memoteca.log`, `memoteca.1.log`, `memoteca.2.log`). Cada linha é `<data UTC> ERRO <detalhe>`, numa linha só (quebras viram espaço, no máximo 600 caracteres). **Nunca entra o que o usuário escreve nem o que o modelo responde**: o detalhe de um backup recusado e de uma linha de chat inválida fala só do tipo e do lugar do erro, porque o texto de erro do `serde` cita o valor. Se o arquivo não puder ser gravado, o app segue sem log. Sem dependência nova.
+- **Catálogo de mensagens (`catalogo.rs`):** os textos continuam com cada tipo de erro (`mensagem_amigavel`), e o catálogo **lista todas** as mensagens que o usuário pode ver (83 hoje: Ollama, banco, instalação, modelos, geração, sugestões, backup, exportação e estado do Ollama). Um teste confere cada uma: em português, frase completa que termina com pontuação, **diz o que fazer** (salvo as só informativas), e **sem texto técnico** (SQL, HTTP, JSON, caminhos, endereços, códigos, nomes de tipos nem o detalhe que é só do log). Um `match` exaustivo impede esquecer uma variante nova. Outro teste aplica as mesmas regras às mensagens escritas direto nos comandos do app (`lib.rs`). A conferência achou e corrigiu mensagens sem ação ("Não há mensagem para responder.", "Não encontramos este item…") e uma com quebra de linha e espaços dentro do texto (modelo inexistente).
+- **Segunda barreira no frontend (`erros.ts`):** um único `mensagemDoErro` (que substituiu as cópias espalhadas pelas telas e stores) só deixa passar texto amigável. Erro do Tauri (argumento inválido, comando inexistente), exceção do JavaScript, objeto, vazio ou texto com cara de erro técnico vira a mensagem padrão. Os 83 textos do catálogo passam pelo filtro sem serem barrados (conferido).
+- **Cobertura do plano de robustez:** o teste `todo_cenario_do_plano_de_robustez_tem_ao_menos_um_teste` lê as linhas `Rnn` do `PLANO.md` e exige um teste que cite cada cenário (`fn rNN_` em Rust, ou `Rnn` no nome de um teste do frontend), menos os cenários cujo teste é só da E15 (o R32). Faltava o **R33**, que ganhou testes.
+- **R26 (dados que não abrem):** o `EstadoBanco` passou a poder ser trocado, então `tentar_abrir_banco` reabre o banco **sem reiniciar o app**. A tela vira um diálogo ("Não foi possível abrir seus dados") com a mensagem amigável, "Tentar de novo" e "Abrir a pasta dos dados" (`abrir_pasta_de_dados`, no Explorador de Arquivos), onde ficam o banco, as cópias de segurança e o log. O app **não apaga nem move** o arquivo. Se der certo, a tela lê tudo de novo e segue.
+- **R33 (fechar o app no meio):** o banco fica consistente, e o teste fecha uma geração no meio, reabre o banco do arquivo (`integrity_check` ok), confere que só a mensagem do usuário ficou (sem resposta pela metade nem duplicada) e que dá para responder de novo. Na tela, uma conversa cuja última mensagem é do usuário e sem erro avisa "Esta mensagem ficou sem resposta…" e oferece **"Gerar resposta"**.
+- **Verificação do Ollama que falha:** a tela com a mensagem ganhou "Tentar de novo", então o app não fica preso até reiniciar.
+- **Limitação aprovada:** um Ollama que cai **durante o uso** não mostra uma faixa permanente; o próximo envio o reinicia sozinho (se foi o app que o iniciou) ou mostra a mensagem na conversa, com "Tentar de novo". A faixa persistente da T10 para esse caso fica para depois.
+
 ### E15 — Testes funcionais ponta a ponta do MVP
 
 **Depende de:** E14.
@@ -650,6 +663,10 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Política de importação (E13) | Mesclar, mantendo o que já existe: o mesmo ID fica como está, sem duplicar nem sobrescrever; o que o usuário excluiu aqui é ignorado; nada é apagado. Num banco vazio restaura tudo. "Substituir tudo" não existe | 2026-11-10 |
 | Escolha do arquivo do backup (E13) | Janela do Windows, com `tauri-plugin-dialog` (crate Rust; traz `tauri-plugin-fs` e `rfd`). O Rust abre a janela, então o caminho nunca passa pelo JavaScript e o plugin não ganha permissões para a interface. Avisado no PR da E13 | 2026-11-10 |
 | Detalhes do backup (E13) | Fora do arquivo: as configurações do app e o registro de exclusões. Arquivo de até 200 MB. Gravação atômica por arquivo temporário e troca. Conversa que já existe é mantida inteira, sem mesclar mensagens | 2026-11-10 |
+| Log local (E14) | Arquivo `logs\memoteca.log` na pasta de dados do app, com rodízio: até 1 MB por arquivo e 3 arquivos (uns 3 MB). Só detalhe técnico de erro, nunca o texto de conversas, memórias ou instruções. Sem dependência nova, no lugar dos `eprintln!` | 2026-11-11 |
+| Banco que não abre (E14) | Diálogo com a mensagem amigável, "Tentar de novo" (reabre o banco sem reiniciar o app) e "Abrir a pasta dos dados". O app não apaga nem move o arquivo. "Começar com um banco novo" ficou de fora: mexe num arquivo do usuário, e o usuário pode fazer isso pela pasta | 2026-11-11 |
+| Catálogo de mensagens (E14) | Os textos ficam com cada tipo de erro, e o módulo `catalogo` lista todas e as confere por teste (português, diz o que fazer, sem texto técnico). Não foi criado um módulo único com todos os textos, para não mexer em ~13 arquivos que funcionam | 2026-11-11 |
+| Limites desta etapa (E14) | A faixa permanente para "Ollama caiu durante o uso" não entrou (o envio seguinte reinicia o Ollama do app). O R32 (segunda instância) segue como teste da E15 | 2026-11-11 |
 | Dependências do chat (E10) | `react-markdown`, `remark-gfm` e `rehype-highlight`, todas já decididas na E03. O realce de código usa cores próprias (CSS), sem importar tema do `highlight.js`. Avisado no PR da E10 | 2026-11-09 |
 | Regras de validação do projeto | Nome obrigatório, com até 100 caracteres (contados como caracteres, e não bytes); instruções opcionais, com até 20.000 caracteres; nomes de projeto repetidos são permitidos; lista em ordem alfabética sem diferenciar maiúsculas. Os limites são defesa contra textos absurdos e podem mudar | 2026-11-09 |
 | Modelo herdado pelas conversas | Vale o modelo padrão do projeto; sem ele, o da primeira conversa criada no projeto que tenha modelo; sem nenhum, a tela pede a escolha. A conversa não grava o padrão: a regra é calculada a cada nova conversa | 2026-11-09 |
@@ -774,7 +791,7 @@ Sugestões de memória (E12): `POST /api/chat` com `"stream": false`, `format` c
 
 Códigos HTTP documentados: `200`, `400` (requisição inválida), `404` (modelo inexistente), `429`, `500` e `502`. Corpo de erro: `{"error": "<texto>"}`. Erro **no meio** de um stream: uma linha `{"error": "<texto>"}`, sem mudar o status HTTP.
 
-Tipos de erro do cliente (E05). O texto final em pt-BR de cada um fica no catálogo da E14.
+Tipos de erro do cliente (E05). O texto final em pt-BR de cada um é o `mensagem_amigavel` do tipo, listado e verificado no catálogo da E14 (`catalogo.rs`).
 
 | Tipo | Quando | O que o usuário vê (resumo) | Recuperação |
 | --- | --- | --- | --- |
@@ -950,7 +967,7 @@ Também mostra a versão do app, a licença (MIT, "Memoteca contributors") e o l
 | Mensagem na conversa | Falha de um envio | Conexão caiu no meio da resposta |
 | Aviso breve (toast) | Confirmação ou aviso sem decisão | Backup exportado |
 
-Toda mensagem diz **o que aconteceu** em linguagem simples, **o que fazer** e oferece um botão de ação. Nunca mostra código, texto cru de API nem stack trace. Os detalhes técnicos vão para o log local (local e retenção definidos na E14).
+Toda mensagem diz **o que aconteceu** em linguagem simples, **o que fazer** e oferece um botão de ação. Nunca mostra código, texto cru de API nem stack trace. Os detalhes técnicos vão para o log local (`%APPDATA%\io.github.0tter-dev.memoteca\logs\memoteca.log`, até 3 arquivos de 1 MB, definido na E14).
 
 #### Fluxos
 

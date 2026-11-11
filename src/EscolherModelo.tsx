@@ -7,6 +7,8 @@ import {
   type ModeloDoCatalogo,
 } from "./tipos";
 
+import { mensagemDoErro } from "./erros";
+
 const MENSAGEM_PADRAO =
   "Não foi possível carregar a lista de modelos. Feche o aplicativo e abra-o de novo.";
 
@@ -42,7 +44,7 @@ function EscolherModelo({ aoBaixar }: Props) {
       })
       .catch((falha: unknown) => {
         if (ativo) {
-          setErro(typeof falha === "string" ? falha : MENSAGEM_PADRAO);
+          setErro(mensagemDoErro(falha, MENSAGEM_PADRAO));
         }
       });
     return () => {

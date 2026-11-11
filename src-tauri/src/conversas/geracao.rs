@@ -50,8 +50,12 @@ impl ErroGeracao {
                 "Já há uma resposta sendo gerada. Espere terminar ou cancele.".to_owned()
             }
             Self::SemModelo => "Escolha um modelo para esta conversa antes de enviar.".to_owned(),
-            Self::NadaParaResponder => "Não há mensagem para responder.".to_owned(),
-            Self::NadaParaRegenerar => "Não há resposta para gerar de novo.".to_owned(),
+            Self::NadaParaResponder => {
+                "Não há mensagem para responder. Escreva uma mensagem e envie.".to_owned()
+            }
+            Self::NadaParaRegenerar => {
+                "Não há resposta para gerar de novo. Envie uma mensagem primeiro.".to_owned()
+            }
             Self::RespostaVazia => {
                 "O modelo não devolveu nenhuma resposta. Tente de novo.".to_owned()
             }

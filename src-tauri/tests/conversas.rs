@@ -965,3 +965,90 @@ fn as_conversas_ficam_em_ordem_da_mais_recente_para_a_mais_antiga() {
 
     assert_eq!(ids(&banco.lock().unwrap()), [primeira.id, segunda.id]);
 }
+
+// ----- R33: fechar o app no meio de uma geração -----
+
+/// Fechar o app (processo encerrado) no meio de uma resposta deixa o banco consistente na
+/// próxima abertura: a mensagem do usuário está lá, não há resposta pela metade nem
+/// duplicada, e dá para responder de novo.
+#[tokio::test]
+async fn r33_fechar_o_app_no_meio_da_geracao_deixa_o_estado_consistente_e_da_para_responder_de_novo()
+ {
+    let servidor_lento = servidor(Resposta::Stream(vec![
+        Passo::Linha(linha_conteudo("Resposta que nunca ")),
+        Passo::Linha(linha_conteudo("vai terminar")),
+        Passo::Silencio,
+    ]))
+    .await;
+    let pasta = std::env::temp_dir().join(format!("memoteca-r33-{}", novo_id()));
+    fs::create_dir_all(&pasta).unwrap();
+    let arquivo: PathBuf = pasta.join("memoteca.db");
+
+    // Primeira "sessão" do app: o usuário envia e o processo é encerrado no meio.
+    let conversa_id = {
+        let banco = Banco::abrir(&arquivo, &pasta.join("backups")).unwrap();
+        let projeto = banco
+            .criar_projeto(&DadosProjeto {
+                nome: "P".into(),
+                system_prompt: String::new(),
+                modelo_padrao: Some("qwen3:8b".into()),
+            })
+            .unwrap();
+        let conversa = banco.criar_conversa_nova(&projeto.id).unwrap();
+        let banco = Mutex::new(banco);
+        registrar_mensagem_do_usuario(&banco, &conversa.id, "Pergunta longa").unwrap();
+        let cancelamento = CancellationToken::new();
+        let cliente_lento = cliente(&servidor_lento.url());
+        let mut recebidos = 0;
+        let mut contar = |_: PedacoChat| recebidos += 1;
+        let geracao = gerar(
+            &banco,
+            &cliente_lento,
+            &conversa.id,
+            ModoDeGeracao::ResponderUltimaMensagem,
+            &cancelamento,
+            &mut contar,
+        );
+        // O tempo acaba com a resposta pela metade: a tarefa é abandonada de repente, sem
+        // passar por nenhum tratamento de cancelamento ou de falha.
+        let fim = tokio::time::timeout(Duration::from_millis(500), geracao).await;
+        assert!(fim.is_err(), "a geração não deveria terminar sozinha");
+        assert!(recebidos >= 1, "o texto já estava chegando");
+        conversa.id
+    };
+
+    // Segunda "sessão": o banco abre normalmente e está íntegro.
+    let banco = Banco::abrir(&arquivo, &pasta.join("backups")).unwrap();
+    let mensagens = banco.listar_mensagens(&conversa_id).unwrap();
+    assert_eq!(mensagens.len(), 1, "só a mensagem do usuário");
+    assert_eq!(mensagens[0].conteudo, "Pergunta longa");
+    assert_eq!(mensagens[0].papel, Papel::Usuario);
+    let integridade: String = rusqlite::Connection::open(&arquivo)
+        .unwrap()
+        .query_row("PRAGMA integrity_check", [], |linha| linha.get(0))
+        .unwrap();
+    assert_eq!(integridade, "ok");
+
+    // E o usuário consegue pedir a resposta de novo ("Gerar resposta"), uma só vez.
+    let servidor_bom = servidor(resposta("Agora sim.")).await;
+    let banco = Mutex::new(banco);
+    let resultado = gerar(
+        &banco,
+        &cliente(&servidor_bom.url()),
+        &conversa_id,
+        ModoDeGeracao::ResponderUltimaMensagem,
+        &CancellationToken::new(),
+        &mut |_| {},
+    )
+    .await;
+    let (resposta_final, _) = concluida(resultado);
+    assert_eq!(resposta_final.conteudo, "Agora sim.");
+    let todas = banco
+        .lock()
+        .unwrap()
+        .listar_mensagens(&conversa_id)
+        .unwrap();
+    assert_eq!(todas.len(), 2, "sem resposta duplicada nem sobrando");
+    drop(banco);
+    let _ = fs::remove_dir_all(&pasta);
+}

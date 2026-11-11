@@ -117,7 +117,7 @@ impl ErroDeBackup {
                  Atualize o Memoteca e tente de novo. Nada foi importado nem alterado."
             ),
             Self::VersaoDesconhecida(None) => "Não foi possível saber a versão deste backup, \
-                então ele não foi importado. Nada foi alterado."
+                então ele não foi importado. Nada foi alterado. Escolha outro arquivo."
                 .to_owned(),
             Self::Invalido(_) => "Este backup tem dados que não passam na verificação, então \
                 não foi importado. Nada foi alterado. Escolha outro arquivo."
@@ -199,8 +199,15 @@ impl Backup {
     /// um formato novo é reconhecido como "versão desconhecida", e não como arquivo inválido),
     /// e só depois lê a estrutura e confere os dados.
     pub fn ler(bytes: &[u8]) -> Result<Self, ErroDeBackup> {
-        let valor: Value = serde_json::from_slice(bytes)
-            .map_err(|erro| ErroDeBackup::NaoEBackup(erro.to_string()))?;
+        // O texto dos erros do serde pode citar trechos do arquivo, que tem as conversas do
+        // usuário. O detalhe guardado fala só do lugar do problema, nunca do conteúdo.
+        let valor: Value = serde_json::from_slice(bytes).map_err(|erro| {
+            ErroDeBackup::NaoEBackup(format!(
+                "JSON inválido na linha {}, coluna {}",
+                erro.line(),
+                erro.column()
+            ))
+        })?;
         let Some(objeto) = valor.as_object() else {
             return Err(ErroDeBackup::NaoEBackup("o JSON não é um objeto".into()));
         };
@@ -212,7 +219,7 @@ impl Backup {
             outra => return Err(ErroDeBackup::VersaoDesconhecida(outra)),
         }
         let backup: Self = serde_json::from_value(valor)
-            .map_err(|erro| ErroDeBackup::NaoEBackup(erro.to_string()))?;
+            .map_err(|_| ErroDeBackup::NaoEBackup("estrutura fora do formato".into()))?;
         backup.verificar()?;
         Ok(backup)
     }

@@ -50,7 +50,7 @@ impl ErroOllama {
             Self::ModeloNaoEncontrado => {
                 "Este modelo não está instalado. Baixe o modelo e tente de novo.".to_owned()
             }
-            Self::ModeloInexistente => "Não encontramos esse modelo na biblioteca do Ollama. \n                Confira o nome e tente de novo."
+            Self::ModeloInexistente => "Não encontramos esse modelo na biblioteca do Ollama. Confira o nome e tente de novo."
                 .to_owned(),
             Self::ModeloSemSuporte => {
                 "Este modelo não serve para conversa. Escolha outro modelo.".to_owned()

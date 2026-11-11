@@ -1,13 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { DadosProjeto, Projeto } from "../tipos";
-
-const MENSAGEM_PADRAO =
-  "Não foi possível concluir. Feche o aplicativo, abra-o de novo e tente outra vez.";
-
-function mensagemDoErro(erro: unknown): string {
-  return typeof erro === "string" ? erro : MENSAGEM_PADRAO;
-}
+import { mensagemDoErro } from "../erros";
 
 /** O que a área principal mostra: o projeto, o formulário de um novo ou o de edição, ou as memórias. */
 export type Modo = "ver" | "novo" | "editar" | "memorias" | "configuracoes";

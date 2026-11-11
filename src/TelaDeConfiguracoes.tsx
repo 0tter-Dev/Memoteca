@@ -3,19 +3,13 @@ import { useState } from "react";
 import ConfirmarImportacao from "./ConfirmarImportacao";
 import { useConversas } from "./estado/conversas";
 import { useProjetos } from "./estado/projetos";
+import { mensagemDoErro } from "./erros";
 import { descreverItens } from "./itensDeBackup";
 import type {
   AnaliseDoBackup,
   ResultadoDaExportacao,
   ResumoDaImportacao,
 } from "./tipos";
-
-const MENSAGEM_PADRAO =
-  "Não foi possível concluir. Feche o aplicativo, abra-o de novo e tente outra vez.";
-
-function mensagemDoErro(erro: unknown): string {
-  return typeof erro === "string" ? erro : MENSAGEM_PADRAO;
-}
 
 /** Tela de configurações. Por enquanto tem a seção "Dados": exportar e importar o backup. */
 function TelaDeConfiguracoes() {

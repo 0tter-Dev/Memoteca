@@ -18,6 +18,8 @@ interface Props {
   aoConcluir: () => void;
 }
 
+import { mensagemDoErro } from "./erros";
+
 const MENSAGEM_PADRAO =
   "Não foi possível concluir. Feche o aplicativo, abra-o de novo e tente outra vez.";
 
@@ -44,7 +46,7 @@ function Onboarding({
       await invoke("concluir_onboarding");
       aoConcluir();
     } catch (falha: unknown) {
-      setErro(typeof falha === "string" ? falha : MENSAGEM_PADRAO);
+      setErro(mensagemDoErro(falha, MENSAGEM_PADRAO));
     }
   }
 
