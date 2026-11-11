@@ -5,7 +5,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist", "src-tauri/target", "src-tauri/gen"],
+    ignores: ["dist", "src-tauri/target", "src-tauri/gen", "e2e/resultados"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -22,7 +22,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["*.config.{js,ts}"],
+    files: ["*.config.{js,ts}", "e2e/**/*.ts"],
     languageOptions: {
       globals: globals.node,
     },

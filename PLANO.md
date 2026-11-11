@@ -28,8 +28,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E11 | Memória manual (projeto e global) e injeção | E10 | concluída |
 | E12 | Sugestão de memórias sob demanda | E11 | concluída |
 | E13 | Exportar e importar | E04, E11 | concluída |
-| E14 | Robustez transversal: erros amigáveis e recuperação | E07, E08, E10, E13 | em revisão |
-| E15 | Testes funcionais ponta a ponta do MVP | E14 | pendente |
+| E14 | Robustez transversal: erros amigáveis e recuperação | E07, E08, E10, E13 | concluída |
+| E15 | Testes funcionais ponta a ponta do MVP | E14 | em revisão |
 | E16 | Empacotamento e release | E15 | pendente |
 
 Valores de **Status**: `pendente`, `em andamento` (só após comando do usuário), `em revisão` (PR aberto) e `concluída` (PR mergeado).
@@ -590,7 +590,51 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 - O checklist manual foi executado uma vez em Windows limpo, com o resultado registrado no PR.
 - O teste do fluxo "fechar e reabrir" realmente reinicia o app, e não só recarrega a tela.
 
-**Decisões a tomar:** ferramenta de E2E para o Tauri no Windows (a definir na E03).
+**Decisões a tomar:** ferramenta de E2E para o Tauri no Windows (decidida na E03: Playwright por CDP, confirmada pelo piloto desta etapa). _Onde o E2E roda, o pacote do Playwright e onde fica o checklist manual foram decididos com o usuário, ver o Registro de decisões._
+
+**Como ficou (E15):**
+
+- **Piloto e ferramenta:** o teste-piloto (abrir o app, interagir, encerrar o processo e abrir outro) passou de primeira, então **fica o Playwright por CDP**, e o `tauri-driver` não foi necessário. O piloto foi absorvido pelos testes do critério 7. Dependência nova (avisada e aprovada): `@playwright/test`, só de desenvolvimento, sem baixar navegador (o Playwright só se conecta ao WebView2 do app).
+- **Como roda:** `pnpm e2e` compila o servidor falso e o app e roda os testes. O `pnpm e2e:build` faz `cargo build --example ollama_falso` e `tauri build --debug --no-bundle --features e2e` (executável em `src-tauri/target/debug`, sem instalador). No CI, o passo `pnpm e2e` vem **depois do `pnpm check`**, no mesmo job (o check obrigatório), sem `continue-on-error`. Fica fora do `pnpm check` porque o E2E **se recusa a rodar onde há um Ollama de verdade** (a porta 11434), como a máquina de quem desenvolve. Um teste (`tests/ci.rs`) confere o passo e a ordem.
+- **Recurso de compilação `e2e` (só no build de teste):** troca a pasta de dados do app (`MEMOTECA_E2E_DADOS`), as janelas "Exportar" e "Importar" por uma pasta de escolhas do teste (`MEMOTECA_E2E_ESCOLHAS`), o instalador do Ollama por um falso (consulta e baixa do servidor falso, aceita a assinatura e "instala" copiando o Ollama falso para a pasta padrão, sem executar o arquivo baixado) e o espaço em disco por um valor que o teste muda com o app aberto (`espaco-livre.txt`). **Nunca entra no build de release:** não é recurso padrão, só o script `e2e:build` o liga, e testes em `tests/ci.rs` conferem isso.
+- **Isolamento:** cada teste cria pastas temporárias (dados, escolhas, `LOCALAPPDATA`, modelos, perfil do WebView2, `TEMP`) e roda o app com um `PATH` só de pastas do sistema, então o único Ollama que existe é o falso, e os dados e o Ollama do usuário não são tocados. Antes de tudo, o E2E confere que nada responde na porta 11434.
+- **Servidor falso executável:** `src-tauri/examples/ollama_falso.rs` reaproveita o `tests/support/ollama_falso.rs` (ganhou respostas dinâmicas e binárias) e responde como um Ollama que funciona. O teste escolhe cenários em tempo de execução (`normal`, `chat_corta`, `pull_interrompido`) e consulta os pedidos recebidos pelas rotas `/__e2e/`. Copiado como `ollama.exe` pelo instalador falso, ele é o Ollama que o app inicia e encerra, o que exercita o ciclo de vida de verdade (R03 e R04).
+- **Fechar e reabrir é de verdade:** o teste encerra o processo do app pedindo à janela que feche (como o usuário) e abre **outro processo**, conferindo que o `pid` mudou, antes de olhar os dados.
+
+| Critério de "MVP pronto" | Teste automatizado (`e2e/`) | Itens do checklist manual |
+| --- | --- | --- |
+| 1. Onboarding sem terminal até ter um modelo | `mvp-1-onboarding`: instala (simulado), inicia o Ollama, baixa um modelo e chega ao app; R03 e R04 (Ollama externo continua, o do app é encerrado) | M01, M02, M04, M09 |
+| 2. Projeto, system prompt e memórias manuais | `mvp-2-5-projeto-conversa-memorias` (critério 2) | |
+| 3. Conversa com modelo, parâmetros e streaming | `mvp-2-5-projeto-conversa-memorias` (critério 3: o pedido ao Ollama leva modelo, `temperature`, `num_ctx` e `keep_alive`) | M03 |
+| 4. Sugestões sob demanda | `mvp-2-5-projeto-conversa-memorias` (critério 4: fechar sem decidir não guarda nada; só a aprovada vira memória) | M03 |
+| 5. Memórias injetadas (projeto e global) | `mvp-2-5-projeto-conversa-memorias` (critério 5: confere a mensagem `system` enviada ao Ollama, a ordem e o escopo) | |
+| 6. Exportar e importar | `mvp-6-7-backup-e-persistencia` (exporta de um app e importa em outro, sem duplicar; R28) | M06 |
+| 7. Persistência ao fechar e reabrir | `mvp-6-7-backup-e-persistencia` (critério 7, com outro processo) | |
+| 8. Falhas previsíveis com mensagem amigável | `mvp-8-falhas`: R02, R07, R09, R11, R16, R26 e R32. Cada teste confere que a tela só mostra texto amigável (sem termos técnicos) e que o app segue utilizável | M07 |
+
+- **Regressão proposital derruba o check:** ao tirar as memórias do projeto da mensagem `system`, o teste do critério 5 falhou e o `pnpm e2e` saiu com código 1 (o passo do CI não tolera falha). A alteração foi desfeita.
+- **R32 (segunda instância):** minimiza a janela, abre o executável outra vez e confere que a segunda execução termina sozinha, que continua um só processo e que a janela voltou. O cenário deixou de ser exceção no teste de cobertura de `tests/robustez.rs`, que agora também lê os nomes dos testes do `e2e/` (os que cobrem um `Rnn` o citam no título).
+- **Não automatizado:** instalação e download reais, as janelas nativas do Windows, a elevação do Windows, Windows limpo e a instalação do app sem terminal. Vão para o checklist abaixo.
+
+**Observação (fora do escopo, não corrigida):** ao mudar dois parâmetros da conversa em sequência quase instantânea (como faz um teste automático), o segundo pode sobrescrever o primeiro, porque cada gravação parte da conversa lida antes de a anterior terminar. Na mão não costuma acontecer, e os testes esperam cada valor aparecer antes do seguinte. Fica anotado para uma etapa de correções.
+
+#### Checklist manual (E15)
+
+Para executar **uma vez** em Windows limpo (VM, sem Ollama, sem modelo e sem ferramentas de desenvolvimento), antes do release, com o resultado registrado no PR. Não use a máquina de desenvolvimento: ela já tem Ollama.
+
+| ID | Item | Como fazer | Resultado esperado | Critério |
+| --- | --- | --- | --- | --- |
+| M01 | Instalar o Ollama pelo app | Abrir o app, seguir o onboarding e clicar em "Instalar o Ollama" | Download de uns 1,6 GB com progresso, instalação sem pedir administrador, e o app mostra o Ollama em execução. **Anotar:** se o instalador silencioso deixa o Ollama rodando e se o `PATH` do usuário foi atualizado (item a validar nos princípios do contrato Ollama) | 1 |
+| M02 | Baixar um modelo de verdade | No onboarding, baixar um modelo pequeno (por exemplo `llama3.2:1b`) | Progresso real, e o modelo aparece como instalado, sem abrir terminal | 1 |
+| M03 | Conversar com o modelo real | Criar um projeto e uma conversa, enviar mensagens, parar uma resposta e pedir sugestões de memória | Streaming fluido, "Parar" funciona, e as sugestões vêm no formato esperado | 3, 4 |
+| M04 | Fechar o app e o Ollama | Fechar o app pela janela. Repetir com o Ollama já aberto pelo ícone da bandeja | O Ollama iniciado pelo app encerra junto. O que já estava aberto continua | 1, 7 |
+| M05 | Versão mínima do Ollama | Instalar à mão o Ollama 0.30.0 e abrir o app | Sem aviso de versão antiga, e conversa e sugestões funcionam. Resolve a decisão pendente sobre a versão mínima | 3 |
+| M06 | Janelas nativas de exportar e importar | Em "Configurações", exportar e importar com as janelas do Windows | A janela abre na frente do app, com o filtro "Backup do Memoteca", e cancelar não altera nada | 6 |
+| M07 | "Abrir a pasta dos dados" | Com os dados indisponíveis (arquivo que não é banco na pasta do app), clicar no botão | O Explorador de Arquivos abre na pasta do Memoteca | 8 |
+| M08 | Pedido de elevação recusado | Se o instalador do Ollama pedir administrador, recusar | Mensagem amigável com "Tentar de novo" | 8 |
+| M09 | Instalar o app sem terminal | Instalar o Memoteca com o instalador e abrir pelo atalho | **Depende do instalador da E16.** Até lá, abrir o `memoteca.exe` do `pnpm tauri build --no-bundle` e conferir só que abre e leva ao onboarding | 1 |
+
+**Registro da execução** (preencher no PR): data, versão do Windows, ID do item, resultado (passou, falhou ou não se aplica) e observações. _Ainda não executado._
 
 ### E16 — Empacotamento e release
 
@@ -667,6 +711,11 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Banco que não abre (E14) | Diálogo com a mensagem amigável, "Tentar de novo" (reabre o banco sem reiniciar o app) e "Abrir a pasta dos dados". O app não apaga nem move o arquivo. "Começar com um banco novo" ficou de fora: mexe num arquivo do usuário, e o usuário pode fazer isso pela pasta | 2026-11-11 |
 | Catálogo de mensagens (E14) | Os textos ficam com cada tipo de erro, e o módulo `catalogo` lista todas e as confere por teste (português, diz o que fazer, sem texto técnico). Não foi criado um módulo único com todos os textos, para não mexer em ~13 arquivos que funcionam | 2026-11-11 |
 | Limites desta etapa (E14) | A faixa permanente para "Ollama caiu durante o uso" não entrou (o envio seguinte reinicia o Ollama do app). O R32 (segunda instância) segue como teste da E15 | 2026-11-11 |
+| E2E no CI (E15) | O `pnpm e2e` roda como um passo do mesmo job, **depois** do `pnpm check`, e fica **fora** do `pnpm check`: o E2E se recusa a rodar onde há um Ollama de verdade na porta 11434, como a máquina de quem desenvolve. O `.github/workflows/ci.yml` deixa de rodar "só o `pnpm check`", e `tests/ci.rs` foi ajustado para aceitar exatamente os dois | 2026-11-11 |
+| Pacote do Playwright (E15) | `@playwright/test` (dependência nova, só de desenvolvimento, sem baixar navegador: o Playwright só se conecta ao WebView2 do app por CDP). Traz o executor de testes e as esperas automáticas. A alternativa, `playwright-core`, deixaria executor e esperas por minha conta | 2026-11-11 |
+| Ferramenta de E2E confirmada (E15) | O piloto passou de primeira (abrir, interagir, encerrar o processo e abrir outro), então fica **Playwright por CDP**, e o `tauri-driver` não é necessário | 2026-11-11 |
+| Recurso `e2e` e servidor falso executável (E15) | Recurso de compilação `e2e` (nunca padrão e nunca no release, conferido em `tests/ci.rs`) para trocar pasta de dados, janelas de arquivo, instalador e espaço em disco, como o plano de testes previa. Servidor falso como *example* do crate (`ollama_falso`), reaproveitando `tests/support/ollama_falso.rs`. Sem dependência nova em Rust | 2026-11-11 |
+| Checklist manual (E15) | Fica numa seção do `PLANO.md` ("Checklist manual (E15)"), mantendo a regra de só README e PLANO como documentação. O usuário executa uma vez em Windows limpo (VM) **antes do merge**, e o resultado é registrado no PR. O item "instalar o app sem terminal" (M09) depende do instalador da E16 | 2026-11-11 |
 | Dependências do chat (E10) | `react-markdown`, `remark-gfm` e `rehype-highlight`, todas já decididas na E03. O realce de código usa cores próprias (CSS), sem importar tema do `highlight.js`. Avisado no PR da E10 | 2026-11-09 |
 | Regras de validação do projeto | Nome obrigatório, com até 100 caracteres (contados como caracteres, e não bytes); instruções opcionais, com até 20.000 caracteres; nomes de projeto repetidos são permitidos; lista em ordem alfabética sem diferenciar maiúsculas. Os limites são defesa contra textos absurdos e podem mudar | 2026-11-09 |
 | Modelo herdado pelas conversas | Vale o modelo padrão do projeto; sem ele, o da primeira conversa criada no projeto que tenha modelo; sem nenhum, a tela pede a escolha. A conversa não grava o padrão: a regra é calculada a cada nova conversa | 2026-11-09 |
@@ -680,8 +729,8 @@ Ao atualizar uma action, troque o SHA e o comentário de versão no `ci.yml`, e 
 | Execução do instalador e elevação | `OllamaSetup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-`, na pasta padrão do usuário, **sem elevar**: o Memoteca nunca pede administrador. Se o Windows exigir elevação (erro 740), a mensagem orienta a instalar pelo site oficial | 2026-11-08 |
 | Dependências do instalador (E07) | `reqwest` com `native-tls` e `system-proxy` (traz `native-tls`, `schannel`, `windows-registry`), `sha2`, e as features `fs` e `io-util` do `tokio` e `Win32_Storage_FileSystem` do `windows-sys`. Avisado no PR da E07 | 2026-11-08 |
 | Dependências do cliente Ollama (E05) | `reqwest` (sem TLS e sem proxy, só `stream`), `tokio`, `tokio-util` (cancelamento), `futures-util`, `serde` e `serde_json`. Todas já estavam na árvore de dependências do Tauri, e agora são declaradas diretamente. O servidor falso usa só `tokio` (dependência de desenvolvimento), sem `axum` ou `hyper` próprios. Avisado no PR da E05; vale como aprovada com o merge | 2026-11-08 |
-| Cobertura de testes no CI | Não exigida por enquanto, sem ferramenta de cobertura nem dependência nova. O código ainda é mínimo e um percentual não diria nada. Reavaliar na E15, com o código do MVP pronto; se entrar, deve entrar também no `pnpm check` | 2026-11-08 |
-| Significado de "build" no CI | O CI roda só `pnpm check`. O build é o do frontend (`tsc && vite build`, parte do `pnpm check`), e o Rust é compilado por `clippy` e `cargo test`. O executável (`tauri build --no-bundle`, com LTO) não roda no CI por custo, e o build do instalador entra na E16 | 2026-11-08 |
+| Cobertura de testes no CI | Não exigida por enquanto, sem ferramenta de cobertura nem dependência nova. O código ainda é mínimo e um percentual não diria nada. Reavaliar na E15, com o código do MVP pronto; se entrar, deve entrar também no `pnpm check`. **Reavaliada na E15:** continua não exigida, porque os critérios do MVP são cobertos por testes funcionais ponta a ponta, que um percentual de linhas não mediria, e ainda não há ferramenta de cobertura decidida. O usuário pode reabrir | 2026-11-08 |
+| Significado de "build" no CI | O CI roda `pnpm check` e, desde a E15, também `pnpm e2e` (o app compilado em modo debug com o recurso `e2e`, sem LTO e sem instalador). O build é o do frontend (`tsc && vite build`, parte do `pnpm check`), e o Rust é compilado por `clippy` e `cargo test`. O executável (`tauri build --no-bundle`, com LTO) não roda no CI por custo, e o build do instalador entra na E16 | 2026-11-08 |
 
 ### Pendentes
 
@@ -1018,7 +1067,7 @@ Escrito na E03. Cada cenário tem um identificador `Rnn`, e o nome do teste que 
 
 - **Servidor Ollama falso:** um pequeno servidor HTTP local que imita `/api/version`, `/api/tags`, `/api/show`, `/api/pull` e `/api/chat`, com **injeção de falhas** por cenário (conexão recusada, linha partida em dois pedaços, JSON inválido, queda no meio do stream, atraso, `404`, linha `error`, resposta de outro programa). Uma única implementação serve aos testes Rust e ao E2E. A biblioteca HTTP usada nele é escolhida na E05, que avisa o usuário se for uma dependência nova.
 - **Abstrações injetáveis** para o que não dá para fazer de verdade em teste: instalador (`Instalador`), espaço livre em disco (`EspacoEmDisco`) e iniciar processo (`Processo`). Os testes usam versões falsas. No E2E, um recurso de compilação de testes troca as reais pelas falsas, e **esse recurso nunca entra no build de release**.
-- **E2E por CDP:** o app abre com `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<porta>` e o Playwright se conecta a ele. É a técnica já usada para verificar o executável na E01. Ela não é o caminho oficial do Tauri (`tauri-driver`), então a E15 **começa com um teste-piloto** (abrir, interagir, fechar e reabrir). Se o piloto falhar, a alternativa é o `tauri-driver`, e a mudança é registrada no Registro de decisões. Fechar e reabrir significa encerrar o processo e iniciar outro.
+- **E2E por CDP:** o app abre com `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<porta>` e o Playwright se conecta a ele. É a técnica já usada para verificar o executável na E01. Ela não é o caminho oficial do Tauri (`tauri-driver`), então a E15 **começa com um teste-piloto** (abrir, interagir, fechar e reabrir). Se o piloto falhar, a alternativa é o `tauri-driver`, e a mudança é registrada no Registro de decisões. **Resultado (E15):** o piloto passou, e a ferramenta continua a mesma. Fechar e reabrir significa encerrar o processo e iniciar outro.
 - O servidor falso ocupa a porta `11434` no CI, que não tem Ollama real. Em máquina de desenvolvimento com Ollama real rodando, o E2E se recusa a iniciar para não interferir.
 
 #### Cenários

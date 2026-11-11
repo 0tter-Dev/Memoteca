@@ -53,7 +53,15 @@ pub enum Resposta {
     NaoEHttp(Vec<u8>),
     /// Lê o pedido e nunca responde.
     NaoResponder,
+    /// Bytes de um arquivo (`Content-Length` exato), como o download de um instalador.
+    Binario(Vec<u8>),
+    /// Decide a resposta na hora, a partir do pedido e de todos os pedidos já recebidos
+    /// (o último é o próprio). Serve ao E2E, onde o estado muda durante o teste.
+    Dinamica(Decisor),
 }
+
+/// Função que decide a resposta de uma rota na hora (ver `Resposta::Dinamica`).
+pub type Decisor = Arc<dyn Fn(&Requisicao, &[Requisicao]) -> Resposta + Send + Sync>;
 
 impl Resposta {
     pub fn json(corpo: &str) -> Self {
@@ -195,12 +203,16 @@ async fn atender(mut socket: TcpStream, estado: Arc<Estado>) {
     };
     estado.requisicoes.lock().unwrap().push(requisicao.clone());
 
-    let resposta = estado
+    let mut resposta = estado
         .rotas
         .lock()
         .unwrap()
         .get(&format!("{} {}", requisicao.metodo, requisicao.caminho))
         .cloned();
+    while let Some(Resposta::Dinamica(decidir)) = resposta {
+        let historico = estado.requisicoes.lock().unwrap().clone();
+        resposta = Some(decidir(&requisicao, &historico));
+    }
 
     match resposta {
         None => {
@@ -212,6 +224,8 @@ async fn atender(mut socket: TcpStream, estado: Arc<Estado>) {
             .await
         }
         Some(Resposta::Json { status, corpo }) => responder_json(socket, status, &corpo).await,
+        Some(Resposta::Dinamica(_)) => unreachable!("resolvida acima"),
+        Some(Resposta::Binario(bytes)) => responder_binario(socket, &bytes).await,
         Some(Resposta::AceitarEFechar) => drop(socket),
         Some(Resposta::NaoEHttp(bytes)) => {
             let _ = socket.write_all(&bytes).await;
@@ -277,6 +291,16 @@ async fn responder_json(mut socket: TcpStream, status: u16, corpo: &str) {
         corpo.len()
     );
     let _ = socket.write_all(resposta.as_bytes()).await;
+    let _ = socket.shutdown().await;
+}
+
+async fn responder_binario(mut socket: TcpStream, bytes: &[u8]) {
+    let cabecalho = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        bytes.len()
+    );
+    let _ = socket.write_all(cabecalho.as_bytes()).await;
+    let _ = socket.write_all(bytes).await;
     let _ = socket.shutdown().await;
 }
 

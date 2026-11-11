@@ -16,6 +16,11 @@ edition = "2024"
 name = "memoteca_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Build dos testes ponta a ponta (E15): pasta de dados e janelas de arquivo escolhidas pelo
+# teste, instalador e espaço em disco falsos. NUNCA entra no build de release (ver tests/ci.rs).
+e2e = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
