@@ -56,6 +56,34 @@ function versaoDoWebView2(): string {
   return saida.status === 0 ? saida.stdout.trim() : "não encontrado";
 }
 
+/** As portas TCP à escuta, para ver onde (e se) o depurador do WebView2 abriu. */
+function portasAEscuta(): string {
+  const saida = spawnSync(
+    "powershell",
+    [
+      "-NoProfile",
+      "-Command",
+      'Get-NetTCPConnection -State Listen | Sort-Object LocalPort | ForEach-Object { "$($_.LocalAddress):$($_.LocalPort) pid=$($_.OwningProcess)" } | Out-String',
+    ],
+    { encoding: "utf8", windowsHide: true },
+  );
+  return saida.stdout.trim() || saida.stderr.trim();
+}
+
+/** Os processos do WebView2 e o trecho da linha de comando que fala do depurador. */
+function processosDoWebView2(): string {
+  const saida = spawnSync(
+    "powershell",
+    [
+      "-NoProfile",
+      "-Command",
+      "Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | ForEach-Object { \"$($_.ProcessId) pai=$($_.ParentProcessId) $([regex]::Match($_.CommandLine, '--type=\\S+|--remote-debugging\\S*').Value)\" } | Out-String",
+    ],
+    { encoding: "utf8", windowsHide: true },
+  );
+  return saida.stdout.trim() || "(nenhum)";
+}
+
 export interface OpcoesDeInicio {
   /** Endereço da "release" do Ollama que o instalador falso consulta. */
   urlDaRelease?: string;
@@ -182,6 +210,8 @@ export class AppEmTeste {
       `log do app: ${this.log().trim() || "(vazio)"}`,
       `perfil do WebView2: ${pasta(this.ambiente.webview)}`,
       `WebView2 instalado: ${versaoDoWebView2()}`,
+      `portas à escuta:\n${portasAEscuta()}`,
+      `processos do WebView2:\n${processosDoWebView2()}`,
     ];
     return new Error(linhas.join("\n"));
   }
