@@ -62,16 +62,22 @@ describe("validar-tag (E16)", () => {
 });
 
 describe("verificar-pacote (E16)", () => {
-  it("falha, com mensagem clara, quando o produto não se chama Memoteca", () => {
-    // O `node.exe` é um executável de verdade, mas o produto dele é "Node.js".
-    const resultado = spawnSync(
-      process.execPath,
-      [VERIFICAR_PACOTE, process.execPath, process.execPath],
-      { encoding: "utf-8" },
-    );
-    expect(resultado.status).toBe(1);
-    expect(resultado.stderr).toContain('deveria ser "Memoteca"');
-  });
+  // O script abre o PowerShell (partida lenta num runner frio) e lê o executável inteiro, então
+  // o prazo padrão do Vitest (5 s) é curto demais: no CI ele já estourou.
+  it(
+    "falha, com mensagem clara, quando o produto não se chama Memoteca",
+    { timeout: 90_000 },
+    () => {
+      // O `node.exe` é um executável de verdade, mas o produto dele é "Node.js".
+      const resultado = spawnSync(
+        process.execPath,
+        [VERIFICAR_PACOTE, process.execPath, process.execPath],
+        { encoding: "utf-8", timeout: 80_000 },
+      );
+      expect(resultado.status).toBe(1);
+      expect(resultado.stderr).toContain('deveria ser "Memoteca"');
+    },
+  );
 
   it("pede os dois caminhos quando faltam argumentos", () => {
     const resultado = spawnSync(process.execPath, [VERIFICAR_PACOTE], {
