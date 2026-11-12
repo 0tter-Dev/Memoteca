@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { EXE_DO_APP, EXE_DO_OLLAMA_FALSO, PORTA_DO_OLLAMA } from "./ambiente";
 import { alguemRespondeNaPorta } from "./ollama-falso";
 
@@ -13,6 +13,14 @@ export default async function preparo(): Promise<void> {
         `Não encontrei ${executavel}. Rode "pnpm e2e:build" antes do E2E.`,
       );
     }
+  }
+  // O `cargo test` recompila o app sem o recurso `e2e`. Esse executável abriria os dados de
+  // verdade do usuário, então só roda o que foi compilado com o recurso.
+  if (!readFileSync(EXE_DO_APP).includes("MEMOTECA_E2E_DADOS")) {
+    throw new Error(
+      `${EXE_DO_APP} não foi compilado com o recurso e2e (o cargo test o recompila sem ele). ` +
+        'Rode "pnpm e2e:build" antes do E2E.',
+    );
   }
   if (await alguemRespondeNaPorta(PORTA_DO_OLLAMA)) {
     throw new Error(

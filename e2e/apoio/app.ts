@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { type Browser, type Page, chromium } from "@playwright/test";
@@ -43,6 +43,17 @@ function user32(comando: string): string {
     windowsHide: true,
   });
   return saida.stdout.trim();
+}
+
+/** A versão do WebView2 instalada, lida do registro do Windows. */
+function versaoDoWebView2(): string {
+  const chave =
+    "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
+  const saida = spawnSync("reg", ["query", chave, "/v", "pv"], {
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  return saida.status === 0 ? saida.stdout.trim() : "não encontrado";
 }
 
 export interface OpcoesDeInicio {
@@ -95,26 +106,55 @@ export class AppEmTeste {
   async iniciar(opcoes: OpcoesDeInicio = {}): Promise<void> {
     const porta = await portaLivre();
     const env = this.ambienteDoProcesso(porta, opcoes);
-    this.processo = spawn(EXE_DO_APP, [], {
+    const saida: string[] = [];
+    let saiu: string | null = null;
+    const processo = spawn(EXE_DO_APP, [], {
       env,
-      stdio: "ignore",
+      stdio: ["ignore", "pipe", "pipe"],
       windowsHide: false,
     });
+    this.processo = processo;
+    for (const fluxo of [processo.stdout, processo.stderr]) {
+      fluxo.on("data", (dados: Buffer) => {
+        saida.push(dados.toString("utf8"));
+        saida.splice(0, Math.max(0, saida.length - 50));
+      });
+    }
+    processo.once("error", (erro) => {
+      saiu = `não foi possível iniciar: ${erro.message}`;
+    });
+    processo.once("exit", (codigo, sinal) => {
+      saiu = `saiu com código ${codigo ?? sinal}`;
+    });
 
-    await esperarAte(
-      async () => {
-        try {
-          const resposta = await fetch(
-            `http://127.0.0.1:${porta}/json/version`,
-          );
-          return resposta.ok;
-        } catch {
-          return false;
-        }
-      },
-      30_000,
-      "o app abrir a janela",
-    );
+    try {
+      await esperarAte(
+        async () => {
+          if (saiu !== null) {
+            return true;
+          }
+          try {
+            const resposta = await fetch(
+              `http://127.0.0.1:${porta}/json/version`,
+            );
+            return resposta.ok;
+          } catch {
+            return false;
+          }
+        },
+        30_000,
+        "o app abrir a janela",
+      );
+    } catch (erro) {
+      throw this.falhaAoIniciar(erro, saiu, saida.join(""));
+    }
+    if (saiu !== null) {
+      throw this.falhaAoIniciar(
+        new Error("O app encerrou ao iniciar"),
+        saiu,
+        saida.join(""),
+      );
+    }
 
     this.navegador = await chromium.connectOverCDP(`http://127.0.0.1:${porta}`);
     const contexto = this.navegador.contexts()[0];
@@ -124,6 +164,26 @@ export class AppEmTeste {
     }
     await pagina.waitForLoadState("domcontentloaded");
     this._pagina = pagina;
+  }
+
+  /** Junta o que ajuda a entender por que o app não abriu (sobretudo no CI, onde não se vê). */
+  private falhaAoIniciar(
+    erro: unknown,
+    saiu: string | null,
+    saida: string,
+  ): Error {
+    const pasta = (caminho: string): string =>
+      existsSync(caminho) ? readdirSync(caminho).join(", ") : "(não existe)";
+    const linhas = [
+      erro instanceof Error ? erro.message : String(erro),
+      `processo: ${saiu ?? "ainda rodando"}`,
+      `saída do app: ${saida.trim() || "(vazia)"}`,
+      `pasta de dados: ${pasta(this.ambiente.dados)}`,
+      `log do app: ${this.log().trim() || "(vazio)"}`,
+      `perfil do WebView2: ${pasta(this.ambiente.webview)}`,
+      `WebView2 instalado: ${versaoDoWebView2()}`,
+    ];
+    return new Error(linhas.join("\n"));
   }
 
   /** O ambiente em que o app roda: isolado do usuário e sem o Ollama de verdade. */

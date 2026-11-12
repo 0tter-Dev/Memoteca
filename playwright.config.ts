@@ -11,6 +11,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
+  // No CI, para no primeiro erro: um app que não abre derrubaria os 17 testes, um por vez.
+  maxFailures: process.env.CI ? 1 : 0,
   timeout: 120_000,
   expect: { timeout: 15_000 },
   use: { actionTimeout: 15_000 },
