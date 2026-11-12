@@ -77,7 +77,7 @@ function processosDoWebView2(): string {
     [
       "-NoProfile",
       "-Command",
-      "Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | ForEach-Object { \"$($_.ProcessId) pai=$($_.ParentProcessId) $([regex]::Match($_.CommandLine, '--type=\\S+|--remote-debugging\\S*').Value)\" } | Out-String",
+      "Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | ForEach-Object { \"$($_.ProcessId) pai=$($_.ParentProcessId) $(if ($_.CommandLine -notmatch '--type=') { $_.CommandLine } else { [regex]::Match($_.CommandLine, '--type=\\S+').Value })\" } | Out-String",
     ],
     { encoding: "utf8", windowsHide: true },
   );
