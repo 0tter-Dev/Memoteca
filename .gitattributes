@@ -2,3 +2,7 @@
 *.png binary
 *.ico binary
 *.icns binary
+
+# Página de licença e textos do instalador: CRLF no Windows, como o NSIS lê.
+src-tauri/instalador/licenca.txt text eol=crlf
+src-tauri/instalador/PortugueseBR.nsh text eol=crlf

@@ -4,6 +4,7 @@ import { useProjetos } from "./estado/projetos";
 import TelaDaConversa from "./TelaDaConversa";
 import TelaDeConfiguracoes from "./TelaDeConfiguracoes";
 import TelaDeMemorias from "./TelaDeMemorias";
+import TelaSobre from "./TelaSobre";
 import FormularioDeProjeto from "./FormularioDeProjeto";
 import Sidebar from "./Sidebar";
 import type { Conversa, EstadoOllama, Projeto } from "./tipos";
@@ -135,6 +136,8 @@ function TelaPrincipal({ ollama, erroDeDados }: Props) {
     conteudo = <p role="status">Carregando os projetos…</p>;
   } else if (modo === "configuracoes") {
     conteudo = <TelaDeConfiguracoes />;
+  } else if (modo === "sobre") {
+    conteudo = <TelaSobre />;
   } else if (modo === "memorias") {
     conteudo = <TelaDeMemorias projeto={selecionado} />;
   } else if (modo === "novo") {

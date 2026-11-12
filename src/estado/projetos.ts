@@ -4,7 +4,8 @@ import type { DadosProjeto, Projeto } from "../tipos";
 import { mensagemDoErro } from "../erros";
 
 /** O que a área principal mostra: o projeto, o formulário de um novo ou o de edição, ou as memórias. */
-export type Modo = "ver" | "novo" | "editar" | "memorias" | "configuracoes";
+export type Modo =
+  "ver" | "novo" | "editar" | "memorias" | "configuracoes" | "sobre";
 
 /** Aba aberta na tela de memórias. */
 export type AbaDeMemorias = "projeto" | "global";
@@ -27,6 +28,8 @@ interface EstadoDeProjetos {
   abrirMemorias: (aba: AbaDeMemorias) => void;
   /** Abre a tela de configurações. */
   abrirConfiguracoes: () => void;
+  /** Abre a tela "Sobre". */
+  abrirSobre: () => void;
   cancelarFormulario: () => void;
   /** Salva (cria ou edita, conforme o modo). Devolve a mensagem de erro, ou `null`. */
   salvar: (dados: DadosProjeto) => Promise<string | null>;
@@ -68,6 +71,7 @@ export const useProjetos = create<EstadoDeProjetos>()((set, get) => ({
   iniciarEdicao: () => set({ modo: "editar" }),
   abrirMemorias: (aba) => set({ modo: "memorias", abaDeMemorias: aba }),
   abrirConfiguracoes: () => set({ modo: "configuracoes" }),
+  abrirSobre: () => set({ modo: "sobre" }),
   cancelarFormulario: () => set({ modo: "ver" }),
 
   salvar: async (dados) => {

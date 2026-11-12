@@ -1,12 +1,23 @@
 # Memoteca
 
-> **Aviso de independência:** este é um projeto independente. Ele **não é afiliado, patrocinado, endossado nem mantido** pelo Ollama ou por seus mantenedores, e **não tem relação direta** com o projeto ou com a marca Ollama. "Ollama" é marca de seus respectivos titulares e aparece aqui apenas para descrever com qual software este aplicativo funciona. O aplicativo **não redistribui o Ollama**: ele é obtido da fonte oficial e permanece como software separado, sob a própria licença.
+> **Aviso de independência.** Este é um projeto independente. Ele **não é afiliado, patrocinado, endossado nem mantido** pelo Ollama ou por seus mantenedores, e **não tem relação direta** com o projeto ou com a marca Ollama. "Ollama" é marca de seus respectivos titulares e aparece aqui apenas para descrever com qual software este aplicativo funciona. O aplicativo **não redistribui o Ollama**: ele é obtido da fonte oficial e permanece como software separado, sob a própria licença.
 
 Aplicativo desktop para Windows que organiza e dá memória às suas conversas com modelos de linguagem locais rodando no [Ollama](https://ollama.com): projetos, conversas e memórias persistentes, com instalação e configuração guiadas, sem precisar abrir um terminal.
 
-## Quick Start
+## Instalação (para usar o app)
 
-O app ainda é só um esqueleto (janela única com o nome do projeto). Para desenvolver no Windows, instale:
+Quando houver uma versão publicada, ela fica na página de [releases](https://github.com/0tter-Dev/Memoteca/releases) do repositório:
+
+1. Baixe o instalador `Memoteca_<versão>_x64-setup.exe` (o SHA-256 dele está nas notas da release, para você conferir com `Get-FileHash`).
+2. Abra o arquivo. O instalador é só para o seu usuário e não pede administrador.
+3. O Windows pode mostrar "O Windows protegeu o computador" (SmartScreen), porque o instalador **ainda não tem assinatura de código**. Clique em **Mais informações** e depois em **Executar assim mesmo**. Isso é esperado nas versões `0.x`.
+4. Abra o Memoteca pelo atalho. Na primeira vez, ele guia a instalação do Ollama e de um modelo, sem terminal.
+
+Para desinstalar, use "Aplicativos instalados" do Windows. Por padrão, a desinstalação **mantém os seus dados** (conversas, memórias e cópias de segurança); o desinstalador tem uma caixa, desmarcada, "Apagar também os dados do aplicativo". O Ollama e os modelos dele nunca são removidos.
+
+## Quick Start (para desenvolver)
+
+Para desenvolver no Windows, instale:
 
 - [Node.js](https://nodejs.org) e [pnpm](https://pnpm.io) (a versão usada está em `packageManager` no `package.json`);
 - [Rust](https://rustup.rs) estável, com as [ferramentas de build C++ do Visual Studio](https://tauri.app/start/prerequisites/#windows);
@@ -27,6 +38,7 @@ Comandos úteis:
 | `pnpm e2e` | Testes ponta a ponta: compila o app com o recurso de teste `e2e` e o servidor Ollama falso, abre o `memoteca.exe` de verdade e o controla com o Playwright. O CI roda depois do `pnpm check`. **Não roda onde há um Ollama de verdade** (porta 11434): feche-o antes. Usa pastas temporárias e nunca toca nos seus dados |
 | `pnpm format` | Aplica o Prettier |
 | `pnpm tauri build --no-bundle` | Gera o executável em `src-tauri/target/release/memoteca.exe`, sem instalador |
+| `pnpm tauri build` | Gera o instalador NSIS em `src-tauri/target/release/bundle/nsis/` (compilação de release, leva alguns minutos). Depois, `node scripts/verificar-pacote.mjs <instalador.exe> src-tauri/target/release/memoteca.exe` confere o nome e os metadados |
 
 ## Escopo atual
 
@@ -44,7 +56,7 @@ Fora do escopo por enquanto: resumo acumulado do projeto, sincronização entre 
 
 ## Status
 
-Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) e **E07** (instalação silenciosa do Ollama) e **E08** (onboarding e catálogo de modelos) e **E09** (projetos) e **E10** (conversas e chat) e **E11** (memória manual) e **E12** (sugestão de memórias) e **E13** (exportar e importar) e **E14** (robustez) concluídas: todo PR e todo push na `main` rodam o `pnpm check` e, em seguida, o `pnpm e2e` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
+Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) e **E07** (instalação silenciosa do Ollama) e **E08** (onboarding e catálogo de modelos) e **E09** (projetos) e **E10** (conversas e chat) e **E11** (memória manual) e **E12** (sugestão de memórias) e **E13** (exportar e importar) e **E14** (robustez) e **E15** (testes ponta a ponta) concluídas: todo PR e todo push na `main` rodam o `pnpm check` e, em seguida, o `pnpm e2e` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
 
 O app abre o banco local ao iniciar, aplica as migrações e mostra uma mensagem amigável se não conseguir.
 
@@ -68,7 +80,9 @@ Em "Configurações", seção "Dados", dá para **exportar um backup** (um arqui
 
 Robustez (E14): se os dados não abrem (arquivo travado, protegido ou danificado), o app mostra um diálogo amigável com "Tentar de novo" (sem reiniciar) e "Abrir a pasta dos dados", e nada é apagado. O mesmo "Tentar de novo" vale quando a verificação do Ollama falha. Os detalhes técnicos dos erros nunca aparecem na tela: vão para o **log local** em `%APPDATA%\io.github.0tter-dev.memoteca\logs\memoteca.log` (até 3 arquivos de 1 MB, sem o texto das suas conversas). Uma conversa cuja última mensagem ficou sem resposta (por exemplo, o app foi fechado no meio) avisa e oferece "Gerar resposta". Testes conferem que toda mensagem de erro segue as regras do catálogo e que todo cenário do plano de robustez tem teste.
 
-Etapa **E15** (testes ponta a ponta do MVP) em revisão: 17 testes funcionais rodam o `memoteca.exe` de verdade, com a janela controlada pelo Playwright, contra um servidor Ollama falso, e cobrem os 8 critérios de "MVP pronto" (onboarding com instalação e download simulados, projeto e memórias, conversa com streaming, sugestões, memórias no contexto, exportar e importar, fechar e reabrir o app com outro processo, e falhas previsíveis com recuperação), além da segunda instância do app. O que não dá para automatizar (instalação e download reais, janelas nativas, Windows limpo) está num checklist manual no [`PLANO.md`](PLANO.md#checklist-manual-e15). O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
+Testes ponta a ponta do MVP (E15): 17 testes funcionais rodam o `memoteca.exe` de verdade, com a janela controlada pelo Playwright, contra um servidor Ollama falso, e cobrem os 8 critérios de "MVP pronto" (onboarding com instalação e download simulados, projeto e memórias, conversa com streaming, sugestões, memórias no contexto, exportar e importar, fechar e reabrir o app com outro processo, e falhas previsíveis com recuperação), além da segunda instância do app. O que não dá para automatizar (instalação e download reais, janelas nativas, Windows limpo) está num checklist manual no [`PLANO.md`](PLANO.md#checklist-manual-e15).
+
+Etapa **E16** (empacotamento e release) em revisão: o app tem identidade visual própria (ícone de prateleiras com um ponto âmbar, fonte em [`identidade/icone.svg`](identidade/icone.svg)), uma tela **Sobre** (botão na lateral) com a versão, a licença e o aviso de independência, e um **instalador NSIS** (`pnpm tauri build`) em português, por usuário e sem administrador, que mostra o aviso de independência e a licença numa página própria. O workflow [`release.yml`](.github/workflows/release.yml) gera o instalador a partir de uma tag `vMAJOR.MINOR.PATCH` (por exemplo `v0.1.0`) cuja versão bate com a do código, e cria uma release em **rascunho** com o instalador anexado; tag com formato inválido não gera nada. Um PR que mexe no empacotamento gera o instalador só como artefato. O instalador ainda não é assinado. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
 
 ## Stack
 
@@ -79,6 +93,7 @@ Etapa **E15** (testes ponta a ponta do MVP) em revisão: 17 testes funcionais ro
 - **Persistência:** SQLite local, via `rusqlite` (SQLite embutido), com migrações próprias e IDs UUIDv7. O banco fica em `%APPDATA%\io.github.0tter-dev.memoteca\memoteca.db`, com cópias de segurança em `backups` quando uma migração é aplicada.
 - **Inferência:** Ollama 0.30 ou mais recente, via API HTTP local (`127.0.0.1:11434`), com cliente em Rust (`reqwest`, `tokio`).
 - **Testes ponta a ponta (E15):** Playwright (`@playwright/test`, só de desenvolvimento e sem baixar navegador) conectado ao WebView2 por CDP, sobre o app compilado com o recurso de teste `e2e` (que nunca entra no build de release) e um servidor Ollama falso.
+- **Instalador e release (E16):** NSIS (um `.exe` por usuário, em pt-BR), gerado pelo empacotador do Tauri e por um workflow de release disparado por tag. Versões `0.x` até o MVP; a `1.0.0` marca o MVP pronto. Sem assinatura de código por enquanto.
 - **CI:** GitHub Actions (runner Windows, permissões mínimas, actions fixadas por commit).
 - **Idioma:** pt-BR.
 

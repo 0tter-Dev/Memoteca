@@ -29,8 +29,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E12 | Sugestão de memórias sob demanda | E11 | concluída |
 | E13 | Exportar e importar | E04, E11 | concluída |
 | E14 | Robustez transversal: erros amigáveis e recuperação | E07, E08, E10, E13 | concluída |
-| E15 | Testes funcionais ponta a ponta do MVP | E14 | em revisão |
-| E16 | Empacotamento e release | E15 | pendente |
+| E15 | Testes funcionais ponta a ponta do MVP | E14 | concluída |
+| E16 | Empacotamento e release | E15 | em revisão |
 
 Valores de **Status**: `pendente`, `em andamento` (só após comando do usuário), `em revisão` (PR aberto) e `concluída` (PR mergeado).
 
@@ -632,7 +632,7 @@ Para executar **uma vez** em Windows limpo (VM, sem Ollama, sem modelo e sem fer
 | M06 | Janelas nativas de exportar e importar | Em "Configurações", exportar e importar com as janelas do Windows | A janela abre na frente do app, com o filtro "Backup do Memoteca", e cancelar não altera nada | 6 |
 | M07 | "Abrir a pasta dos dados" | Com os dados indisponíveis (arquivo que não é banco na pasta do app), clicar no botão | O Explorador de Arquivos abre na pasta do Memoteca | 8 |
 | M08 | Pedido de elevação recusado | Se o instalador do Ollama pedir administrador, recusar | Mensagem amigável com "Tentar de novo" | 8 |
-| M09 | Instalar o app sem terminal | Instalar o Memoteca com o instalador e abrir pelo atalho | **Depende do instalador da E16.** Até lá, abrir o `memoteca.exe` do `pnpm tauri build --no-bundle` e conferir só que abre e leva ao onboarding | 1 |
+| M09 | Instalar o app sem terminal | Instalar o Memoteca com o instalador e abrir pelo atalho | **Passou para o checklist da E16 (M10)**, que usa o instalador de verdade. Até lá, abrir o `memoteca.exe` do `pnpm tauri build --no-bundle` e conferir só que abre e leva ao onboarding | 1 |
 
 **Registro da execução** (preencher no PR): data, versão do Windows, ID do item, resultado (passou, falhou ou não se aplica) e observações. _Ainda não executado._
 
@@ -658,7 +658,43 @@ Para executar **uma vez** em Windows limpo (VM, sem Ollama, sem modelo e sem fer
 - A desinstalação remove o app e trata os dados do usuário conforme a política definida.
 - Uma tag com formato inválido não gera release. **(falha)**
 
-**Decisões a tomar:** formato do instalador (NSIS ou MSI), assinatura de código (sem ela o Windows pode alertar o usuário), e se a desinstalação mantém ou apaga os dados do usuário.
+**Decisões a tomar:** formato do instalador (NSIS ou MSI), assinatura de código (sem ela o Windows pode alertar o usuário), e se a desinstalação mantém ou apaga os dados do usuário. _Decididas com o usuário, ver o Registro de decisões._
+
+**Como ficou (E16):**
+
+- **Identidade visual:** o usuário escolheu o conceito A, "prateleiras e um ponto" (três prateleiras claras sobre índigo, com um ponto âmbar que é a memória guardada). A fonte é `identidade/icone.svg`, e os ícones do app (`src-tauri/icons`, com `.ico` para o executável e o instalador) foram gerados dela por `pnpm tauri icon identidade/icone.svg` (os de Android e iOS foram descartados). Não usa logotipo, cores nem figura do Ollama. É um conceito de partida, e não um logo de design profissional.
+- **Tela "Sobre" (T09):** botão "ⓘ Sobre" na lateral. Mostra o aviso de independência, a versão (lida do app), a licença e o repositório como texto (sem link clicável, como já valia para links). O aviso é um só texto em `src/avisoDeIndependencia.ts`.
+- **Instalador:** NSIS (`bundle.targets = ["nsis"]`), um `.exe` por usuário (`installMode: currentUser`, sem administrador), em pt-BR. Mostra uma página de **licença com o aviso de independência e a licença MIT** (`src-tauri/instalador/licenca.txt`, UTF-8 que o empacotador converte para o NSIS) e usa os textos em `src-tauri/instalador/PortugueseBR.nsh`, cópia do arquivo padrão do Tauri com dois ajustes: o nome do app não vinha preenchido nas mensagens "está aberto" (aparecia `{{product_name}}`) e a caixa de dados do desinstalador diz o que some. Metadados: produto "Memoteca", empresa e direitos "Memoteca contributors". O WebView2 ausente é baixado pelo instalador (modo padrão do Tauri); o Windows 11 já o tem.
+- **Dados na desinstalação:** por padrão ficam. O desinstalador do Tauri traz uma caixa **desmarcada** ("Apagar também os meus dados (conversas, memórias e cópias de segurança)"), que, se marcada, remove `%APPDATA%\io.github.0tter-dev.memoteca` e `%LOCALAPPDATA%\io.github.0tter-dev.memoteca`. O Ollama e os modelos dele nunca são tocados. Conferido numa instalação silenciosa e desinstalação reais: os arquivos, o atalho e a chave de desinstalação somem e os dados do usuário ficam intactos. O caminho "apagar os dados" não foi exercitado na máquina de desenvolvimento (apagaria dados de verdade) e está no checklist manual (M13).
+- **Workflow de release (`.github/workflows/release.yml`):** dispara por **tag `v*`**. O job `validar` roda `scripts/validar-tag.mjs`: a tag precisa ser `vMAJOR.MINOR.PATCH` (só números, sem zero à esquerda, sem sufixo) **e** a versão dela precisa ser a do `package.json`, `Cargo.toml`, `Cargo.lock` e `tauri.conf.json`. Se falhar, os jobs seguintes são pulados e **nenhuma release é criada**. O job `instalador` (Windows) roda `pnpm tauri build` e `scripts/verificar-pacote.mjs` (produto "Memoteca" nos metadados do instalador e do executável, e nem "OllamaUI" nem o recurso de testes `e2e` no pacote) e guarda o instalador como artefato. O job `publicar`, o **único com permissão de escrita**, cria a release em **rascunho** (`--draft --verify-tag`) com o instalador, as notas (`.github/notas-da-release.md`: aviso, como instalar, aviso do SmartScreen) e o SHA-256. O mantenedor publica o rascunho depois de olhar. Sem segredos e actions fixadas por commit.
+- **Pull request:** o mesmo workflow roda em PR que mexe nos arquivos de empacotamento (config do Tauri, ícones, instalador, scripts, o próprio workflow) e gera o instalador só como artefato (sem `validar` e sem release), para o empacotamento não quebrar sem ninguém notar. O check obrigatório da `main` continua sendo o das verificações (E02/E15), e este é um check à parte.
+- **Versionamento:** o app está em `0.1.0`. A série é `0.x` até o MVP, e a `1.0.0` marca o MVP pronto. Mudar a versão é mudar os quatro arquivos acima, e o `validar-tag` recusa a tag se não baterem.
+
+| Critério de aceite | Como é verificado |
+| --- | --- |
+| Aviso na tela "Sobre", no instalador e no `README.md`; nada sugere produto oficial do Ollama **(falha)** | `src/Sobre.test.tsx` (a tela mostra o aviso, sem imagem nem `OllamaUI`); `src-tauri/tests/empacotamento.rs` (o mesmo texto no README, PLANO, notas da release e página de licença do instalador, e metadados sem citar o Ollama como autor); M10 e M11 |
+| Nome "Memoteca" no instalador, na janela, nos metadados e na release; "OllamaUI" em nenhum **(falha)** | `tests/empacotamento.rs` (config e arquivos de empacotamento); `scripts/verificar-pacote.mjs` roda no workflow sobre o instalador e o executável **gerados** e lê os metadados reais; M12 |
+| O workflow gera o instalador a partir de uma tag e o anexa à release | `tests/empacotamento.rs` confere a estrutura do workflow (tag, jobs, rascunho, anexo). A execução de verdade com uma tag é o M15 |
+| Em Windows limpo, o instalador instala o app, que abre e leva ao onboarding, sem terminal | M10 (instalação silenciosa e desinstalação já conferidas na máquina de desenvolvimento, sem abrir o app) |
+| A desinstalação remove o app e trata os dados conforme a política | `tests/empacotamento.rs` (texto da caixa e política); instalação e desinstalação silenciosas conferidas à mão; M13 e M14 |
+| Tag com formato inválido não gera release **(falha)** | `scripts/scripts.test.ts` (11 formatos inválidos, tag ausente e versão diferente do código, todos com código 1 e mensagem amigável); `tests/empacotamento.rs` (o `instalador` só roda se o `validar` passou, e só o `publicar` cria release); M15 |
+
+- **Não automatizado:** a instalação do app em Windows limpo, a caixa de apagar dados, a página de licença na tela e o disparo real do workflow por tag. Vão para o checklist abaixo.
+
+#### Checklist manual (E16)
+
+Para executar **uma vez**, em Windows limpo (VM, sem o Memoteca instalado), com o instalador gerado pelo workflow deste PR (artefato `instalador` da execução do **Release**, em Actions). Registrar o resultado no PR. M15 só pode ser feito depois do merge, e o resultado vai como comentário no PR.
+
+| ID | Item | Como fazer | Resultado esperado | Critério |
+| --- | --- | --- | --- | --- |
+| M10 | Instalar sem terminal | Abrir o instalador. Passar as páginas e abrir o Memoteca pelo atalho | Pode aparecer o alerta do SmartScreen (sem assinatura), e "Mais informações" leva a "Executar assim mesmo". O instalador está em português, **não pede administrador** e tem uma página com o aviso de independência e a licença MIT. O app abre e leva ao onboarding | Instala e abre; aviso no instalador |
+| M11 | Tela "Sobre" | Clicar em "Sobre" na lateral | Aviso de independência, versão igual à do nome do instalador, licença MIT e endereço do repositório. Nada lembra a marca do Ollama | Aviso na tela |
+| M12 | Nome e ícone | Ver as propriedades do instalador e do `memoteca.exe`, o atalho, a janela e "Aplicativos instalados" | Sempre "Memoteca", com o ícone das prateleiras e do ponto âmbar. Nenhum "OllamaUI" nem figura do Ollama | Nome e metadados |
+| M13 | Desinstalar apagando os dados | Criar um projeto, desinstalar **marcando** "Apagar também os meus dados" | O app some, e a pasta `%APPDATA%\io.github.0tter-dev.memoteca` também. O Ollama e os modelos continuam | Dados na desinstalação |
+| M14 | Desinstalar mantendo os dados | Instalar de novo, criar um projeto, desinstalar **sem marcar** a caixa e instalar outra vez | O app some, e a pasta de dados fica. Ao reinstalar, o projeto continua lá | Dados na desinstalação |
+| M15 | Release por tag (depois do merge) | Criar a tag `v0.1.0` no commit da `main` e enviá-la. Depois, uma tag inválida, por exemplo `v0.1` | `v0.1.0`: o workflow gera o instalador e cria um **rascunho** de release com o instalador, as notas e o SHA-256, que bate com o do arquivo. `v0.1`: o workflow falha em "Validar a tag" com mensagem clara, e **nenhuma** release é criada. Apagar a tag e o rascunho de teste, se não forem usar | Workflow e tag inválida |
+
+**Registro da execução** (preencher no PR): data, versão do Windows, ID do item, resultado (passou, falhou ou não se aplica) e observações. _Ainda não executado._
 
 ---
 
@@ -716,6 +752,12 @@ Para executar **uma vez** em Windows limpo (VM, sem Ollama, sem modelo e sem fer
 | Ferramenta de E2E confirmada (E15) | O piloto passou de primeira (abrir, interagir, encerrar o processo e abrir outro), então fica **Playwright por CDP**, e o `tauri-driver` não é necessário | 2026-11-11 |
 | Recurso `e2e` e servidor falso executável (E15) | Recurso de compilação `e2e` (inclusive a janela com a porta CDP por argumento, no lugar da variável de ambiente do WebView2, que o runner ignorou) (nunca padrão e nunca no release, conferido em `tests/ci.rs`) para trocar pasta de dados, janelas de arquivo, instalador e espaço em disco, como o plano de testes previa. Servidor falso como *example* do crate (`ollama_falso`), reaproveitando `tests/support/ollama_falso.rs`. Sem dependência nova em Rust | 2026-11-11 |
 | Checklist manual (E15) | Fica numa seção do `PLANO.md` ("Checklist manual (E15)"), mantendo a regra de só README e PLANO como documentação. O usuário executa uma vez em Windows limpo (VM) **antes do merge**, e o resultado é registrado no PR. O item "instalar o app sem terminal" (M09) depende do instalador da E16 | 2026-11-11 |
+| Formato do instalador (E16) | **NSIS**: um único `.exe`, por usuário, sem administrador, em pt-BR, com página de licença que leva o aviso de independência e a opção de apagar os dados na desinstalação. O MSI (WiX) foi descartado: instala para a máquina toda, pede administrador e personaliza menos | 2026-11-12 |
+| Assinatura de código (E16) | **Sem assinatura nas versões `0.x`.** O Windows SmartScreen pode alertar, e o README e as notas da release explicam como seguir ("Mais informações", "Executar assim mesmo"). Nenhum certificado nem segredo no repositório, e o workflow não usa segredos. **Reavaliar antes da `1.0.0`** (certificado ou serviço de assinatura para projetos abertos) | 2026-11-12 |
+| Dados na desinstalação (E16) | **Mantidos por padrão**, com uma caixa desmarcada no desinstalador para apagar também os dados do app (`%APPDATA%` e `%LOCALAPPDATA%` do identificador do app). O Ollama e os modelos nunca são tocados | 2026-11-12 |
+| Identidade visual (E16) | Conceito **A, "prateleiras e um ponto"**: ícone com três prateleiras claras sobre índigo e um ponto âmbar. Fonte em `identidade/icone.svg`, ícones gerados dela. Conceito de partida, e não um logo profissional; nada do Ollama. Tagline não definida (opcional) | 2026-11-12 |
+| Release por tag (E16) | Tag `vMAJOR.MINOR.PATCH` (sem sufixo) com a versão igual à dos quatro arquivos do código; qualquer outra não gera nada. A release é criada em **rascunho** e o mantenedor a publica depois de olhar. O workflow também roda em PR que mexe no empacotamento, só gerando o instalador como artefato. Não foi criada nenhuma tag nem release neste PR | 2026-11-12 |
+| Tela "Sobre" (E16) | Botão na lateral. Repositório como texto, sem link clicável (o app não abre endereços externos, decisão dos links). O aviso de independência é um texto só, usado na tela, na página de licença do instalador, no README, no PLANO e nas notas da release | 2026-11-12 |
 | Dependências do chat (E10) | `react-markdown`, `remark-gfm` e `rehype-highlight`, todas já decididas na E03. O realce de código usa cores próprias (CSS), sem importar tema do `highlight.js`. Avisado no PR da E10 | 2026-11-09 |
 | Regras de validação do projeto | Nome obrigatório, com até 100 caracteres (contados como caracteres, e não bytes); instruções opcionais, com até 20.000 caracteres; nomes de projeto repetidos são permitidos; lista em ordem alfabética sem diferenciar maiúsculas. Os limites são defesa contra textos absurdos e podem mudar | 2026-11-09 |
 | Modelo herdado pelas conversas | Vale o modelo padrão do projeto; sem ele, o da primeira conversa criada no projeto que tenha modelo; sem nenhum, a tela pede a escolha. A conversa não grava o padrão: a regra é calculada a cada nova conversa | 2026-11-09 |
@@ -730,15 +772,15 @@ Para executar **uma vez** em Windows limpo (VM, sem Ollama, sem modelo e sem fer
 | Dependências do instalador (E07) | `reqwest` com `native-tls` e `system-proxy` (traz `native-tls`, `schannel`, `windows-registry`), `sha2`, e as features `fs` e `io-util` do `tokio` e `Win32_Storage_FileSystem` do `windows-sys`. Avisado no PR da E07 | 2026-11-08 |
 | Dependências do cliente Ollama (E05) | `reqwest` (sem TLS e sem proxy, só `stream`), `tokio`, `tokio-util` (cancelamento), `futures-util`, `serde` e `serde_json`. Todas já estavam na árvore de dependências do Tauri, e agora são declaradas diretamente. O servidor falso usa só `tokio` (dependência de desenvolvimento), sem `axum` ou `hyper` próprios. Avisado no PR da E05; vale como aprovada com o merge | 2026-11-08 |
 | Cobertura de testes no CI | Não exigida por enquanto, sem ferramenta de cobertura nem dependência nova. O código ainda é mínimo e um percentual não diria nada. Reavaliar na E15, com o código do MVP pronto; se entrar, deve entrar também no `pnpm check`. **Reavaliada na E15:** continua não exigida, porque os critérios do MVP são cobertos por testes funcionais ponta a ponta, que um percentual de linhas não mediria, e ainda não há ferramenta de cobertura decidida. O usuário pode reabrir | 2026-11-08 |
-| Significado de "build" no CI | O CI roda `pnpm check` e, desde a E15, também `pnpm e2e` (o app compilado em modo debug com o recurso `e2e`, sem LTO e sem instalador). O build é o do frontend (`tsc && vite build`, parte do `pnpm check`), e o Rust é compilado por `clippy` e `cargo test`. O executável (`tauri build --no-bundle`, com LTO) não roda no CI por custo, e o build do instalador entra na E16 | 2026-11-08 |
+| Significado de "build" no CI | O CI roda `pnpm check` e, desde a E15, também `pnpm e2e` (o app compilado em modo debug com o recurso `e2e`, sem LTO e sem instalador). O build é o do frontend (`tsc && vite build`, parte do `pnpm check`), e o Rust é compilado por `clippy` e `cargo test`. O executável (`tauri build --no-bundle`, com LTO) não roda no CI por custo. **Desde a E16**, o build de release e do instalador roda no workflow `release.yml` (por tag, e em PR que mexe no empacotamento) | 2026-11-08 |
 
 ### Pendentes
 
 | Decisão | Etapa que a resolve |
 | --- | --- |
 | Confirmar a versão mínima do Ollama (0.30.0) contra um Ollama real dessa versão. Na E06 só havia a 0.32.9 para testar | E15 (checklist manual) |
-| Formato do instalador, assinatura de código, dados na desinstalação | E16 |
-| Identidade visual (logo e paleta). Opcional, a discutir quando o usuário quiser, com a skill `project-identity`. Direção inicial: marca geométrica de "prateleiras e um ponto". Os ícones atuais são os padrões do Tauri e são provisórios | Antes de E16 |
+| Assinatura de código dos instaladores | Antes da `1.0.0` |
+| Refinar a identidade visual (logo profissional, tagline). O conceito A está em uso | Opcional, quando o usuário quiser |
 | Consulta formal de registro de marca (INPI, USPTO, EUIPO) e do domínio, antes de divulgar amplamente. A triagem feita não substitui essa consulta | Mantenedor, antes de divulgar |
 
 ### Contrato Ollama
@@ -1003,9 +1045,11 @@ Diálogo aberto pelo botão da T04. Ver o fluxo F6.
 
 Texto do aviso de independência (o mesmo do `README.md`):
 
-> **Memoteca** é um projeto independente. Não é afiliado, patrocinado, endossado nem mantido pelo Ollama ou por seus mantenedores, e não tem relação direta com o projeto ou com a marca Ollama. "Ollama" é marca de seus respectivos titulares e aparece aqui apenas para indicar com qual software este aplicativo funciona. O Memoteca não redistribui o Ollama: ele é obtido da fonte oficial e continua sendo software separado, sob a própria licença.
+> Este é um projeto independente. Ele não é afiliado, patrocinado, endossado nem mantido pelo Ollama ou por seus mantenedores, e não tem relação direta com o projeto ou com a marca Ollama. "Ollama" é marca de seus respectivos titulares e aparece aqui apenas para descrever com qual software este aplicativo funciona. O aplicativo não redistribui o Ollama: ele é obtido da fonte oficial e permanece como software separado, sob a própria licença.
 
-Também mostra a versão do app, a licença (MIT, "Memoteca contributors") e o link do repositório. Sem logotipo, ícone ou identidade visual do Ollama.
+(O texto é um só, em `src/avisoDeIndependencia.ts`: o mesmo do `README.md`, da tela "Sobre", da página de licença do instalador e das notas da release. Um teste confere que continuam iguais.)
+
+Também mostra a versão do app, a licença (MIT, "Memoteca contributors") e o endereço do repositório, como texto selecionável (o app não abre endereços externos). Sem logotipo, ícone ou identidade visual do Ollama.
 
 #### T10 — Padrões de mensagem de erro
 
