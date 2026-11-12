@@ -73,5 +73,16 @@ export function criarAmbiente(): Ambiente {
 }
 
 export function apagarAmbiente(ambiente: Ambiente): void {
-  rmSync(ambiente.raiz, { recursive: true, force: true, maxRetries: 5 });
+  // Os processos do WebView2 demoram um pouco para soltar os arquivos depois que o app fecha.
+  // Limpar a pasta temporária nunca pode fazer um teste falhar.
+  try {
+    rmSync(ambiente.raiz, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 250,
+    });
+  } catch {
+    // Fica para o sistema limpar a pasta temporária.
+  }
 }

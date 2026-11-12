@@ -9,6 +9,7 @@
 //!
 //! - `MEMOTECA_E2E_DADOS`: pasta de dados do app (banco, cópias, log) em vez da pasta do usuário;
 //! - `MEMOTECA_E2E_ESCOLHAS`: pasta que substitui as janelas "Exportar" e "Importar";
+//! - `MEMOTECA_E2E_CDP_PORT`: porta de depuração do WebView2, por onde o Playwright se conecta;
 //! - `MEMOTECA_E2E_RELEASE_URL`: endereço da "release" do Ollama (servidor falso);
 //! - `MEMOTECA_E2E_OLLAMA_FALSO`: o executável que o instalador falso "instala" como `ollama.exe`.
 //!
@@ -137,4 +138,26 @@ pub fn instalador(
         Arc::new(AssinaturaAceita),
         Arc::new(executor),
     ))
+}
+
+/// Cria a janela principal no build de teste. No `e2e.tauri.conf.json` a lista de janelas é
+/// vazia, e a janela é criada aqui, com a porta de depuração do WebView2 (CDP) que o teste pede
+/// em `MEMOTECA_E2E_CDP_PORT`. A variável de ambiente do WebView2 não chega a ele em todo
+/// ambiente (no runner do GitHub foi ignorada), e passar o argumento pela janela funciona sempre.
+/// O título e os tamanhos são os do `tauri.conf.json`.
+pub fn criar_janela(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    let mut janela = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+        .title("Memoteca")
+        .inner_size(1100.0, 720.0)
+        .min_inner_size(800.0, 560.0);
+    #[cfg(windows)]
+    if let Ok(porta) = std::env::var("MEMOTECA_E2E_CDP_PORT") {
+        // Mantém os argumentos que o Tauri já passa ao WebView2.
+        janela = janela.additional_browser_args(&format!(
+            "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={porta}"
+        ));
+    }
+    janela.build().map(|_| ())
 }

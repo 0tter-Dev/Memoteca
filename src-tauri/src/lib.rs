@@ -1104,6 +1104,8 @@ pub fn run() {
                 servico,
                 em_andamento: Mutex::new(None),
             });
+            #[cfg(feature = "e2e")]
+            e2e::criar_janela(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

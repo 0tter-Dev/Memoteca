@@ -237,7 +237,7 @@ export class AppEmTeste {
       TMP: this.ambiente.temporaria,
       OLLAMA_MODELS: this.ambiente.modelos,
       WEBVIEW2_USER_DATA_FOLDER: this.ambiente.webview,
-      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${porta}`,
+      MEMOTECA_E2E_CDP_PORT: String(porta),
       MEMOTECA_E2E_DADOS: this.ambiente.dados,
       MEMOTECA_E2E_ESCOLHAS: this.ambiente.escolhas,
       MEMOTECA_E2E_OLLAMA_FALSO: EXE_DO_OLLAMA_FALSO,
