@@ -116,7 +116,7 @@ fn roda_em_runner_windows() {
 }
 
 #[test]
-fn roda_o_mesmo_comando_do_ambiente_local_sem_verificacoes_extras() {
+fn roda_o_comando_local_e_depois_os_testes_ponta_a_ponta_sem_verificacoes_extras() {
     let comandos: Vec<String> = linhas_do_workflow()
         .iter()
         .filter_map(|l| valor_apos(l, "run:"))
@@ -125,12 +125,82 @@ fn roda_o_mesmo_comando_do_ambiente_local_sem_verificacoes_extras() {
     assert!(comandos.iter().any(|c| c == "pnpm check"));
     for comando in comandos {
         let permitido = comando == "pnpm check"
+            || comando == "pnpm e2e"
             || comando == "pnpm install --frozen-lockfile"
             || comando.starts_with("rustup toolchain install");
         assert!(
             permitido,
-            "o CI só pode preparar o ambiente e rodar `pnpm check`: {comando}"
+            "o CI só pode preparar o ambiente e rodar `pnpm check` e `pnpm e2e`: {comando}"
         );
+    }
+}
+
+/// A E15 exige que os testes ponta a ponta rodem no workflow, e que uma regressão derrube o
+/// check. O passo `pnpm e2e` vem depois do `pnpm check`, no mesmo job (o check obrigatório), e
+/// não pode ser tolerado a falhar.
+#[test]
+fn os_testes_ponta_a_ponta_rodam_depois_do_check_e_nao_podem_falhar_em_silencio() {
+    let linhas = linhas_do_workflow();
+    let posicao_do_check = linhas
+        .iter()
+        .position(|l| valor_apos(l, "run:").as_deref() == Some("pnpm check"))
+        .expect("o CI deve rodar `pnpm check`");
+    let posicao_do_e2e = linhas
+        .iter()
+        .position(|l| valor_apos(l, "run:").as_deref() == Some("pnpm e2e"))
+        .expect("o CI deve rodar `pnpm e2e`");
+
+    assert!(posicao_do_check < posicao_do_e2e);
+    assert!(
+        !linhas.iter().any(|l| l.contains("continue-on-error")),
+        "nenhum passo pode ter `continue-on-error`, senão a regressão não derruba o check"
+    );
+}
+
+#[test]
+fn o_script_e2e_existe_e_roda_o_playwright_sobre_o_build_de_testes() {
+    let pacote: Value = serde_json::from_str(PACKAGE_JSON).expect("package.json válido");
+    let e2e = pacote["scripts"]["e2e"].as_str().expect("script `e2e`");
+    let construir = pacote["scripts"]["e2e:build"]
+        .as_str()
+        .expect("script `e2e:build`");
+
+    assert!(e2e.contains("pnpm e2e:build") && e2e.contains("playwright test"));
+    assert!(construir.contains("--features e2e"));
+    assert!(construir.contains("ollama_falso"));
+    // O E2E não entra no `pnpm check`: ele se recusa a rodar onde há um Ollama de verdade.
+    let check = pacote["scripts"]["check"].as_str().unwrap();
+    assert!(!check.contains("e2e"));
+}
+
+/// O recurso `e2e` troca a pasta de dados, as janelas de arquivo, o instalador e o espaço em
+/// disco por versões de teste. Nunca pode estar ativo num build normal nem no de release.
+#[test]
+fn o_recurso_e2e_nunca_e_ativado_por_padrao_nem_no_build_de_release() {
+    let cargo = include_str!("../Cargo.toml");
+    let tauri = include_str!("../tauri.conf.json");
+    let pacote: Value = serde_json::from_str(PACKAGE_JSON).expect("package.json válido");
+
+    assert!(cargo.contains("e2e = []"), "o recurso `e2e` deve existir");
+    assert!(
+        !cargo.lines().any(|l| l.trim_start().starts_with("default")),
+        "nenhum recurso pode ser ativado por padrão"
+    );
+    assert!(
+        !tauri.contains("e2e"),
+        "o tauri.conf.json não pode ligar o recurso"
+    );
+
+    // Só o script `e2e:build` liga o recurso. O `build` e o `tauri` não.
+    let scripts = pacote["scripts"].as_object().expect("scripts");
+    for (nome, comando) in scripts {
+        let comando = comando.as_str().unwrap_or_default();
+        if comando.contains("--features e2e") {
+            assert_eq!(
+                nome, "e2e:build",
+                "só `e2e:build` pode ligar o recurso `e2e`"
+            );
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 //! Conferências da E14 sobre o plano de robustez e as mensagens de erro.
 //!
 //! * Todo cenário `Rnn` do `PLANO.md` tem ao menos um teste que o cita (no nome do teste Rust,
-//!   `rNN_...`, ou no nome de um teste do frontend).
+//!   `rNN_...`, ou no nome de um teste do frontend ou do E2E).
 //! * As mensagens escritas direto nos comandos do app (`lib.rs`) seguem as mesmas regras do
 //!   catálogo (`memoteca_lib::catalogo`), que já cobre as mensagens dos tipos de erro.
 
@@ -93,14 +93,12 @@ fn todo_cenario_do_plano_de_robustez_tem_ao_menos_um_teste() {
         &mut web,
     );
     let rust: Vec<String> = rust.iter().map(|c| ler(c)).collect();
+    // O E2E da E15 (`e2e/*.e2e.ts`) também cita os cenários no nome dos testes.
+    arquivos(&Path::new(RAIZ).join("../e2e"), &[".e2e.ts"], &mut web);
     let web: Vec<String> = web.iter().map(|c| ler(c)).collect();
 
     let mut sem_teste = Vec::new();
     for cenario in cenarios_do_plano() {
-        // Um cenário cujo teste só é previsto para a E15 (o ponta a ponta) fica de fora.
-        if cenario.etapas.iter().all(|etapa| *etapa >= 15) {
-            continue;
-        }
         let minusculo = cenario.id.to_lowercase();
         let em_rust = rust
             .iter()

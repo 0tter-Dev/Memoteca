@@ -24,6 +24,7 @@ Comandos úteis:
 | `pnpm check` | Roda todas as verificações: formato, lint, tipos, testes e build do frontend, e formato, lint e testes do backend Rust. É o mesmo comando que o CI executa |
 | `pnpm test` | Testes do frontend (Vitest) |
 | `pnpm rust:test` | Testes do backend (`cargo test`) |
+| `pnpm e2e` | Testes ponta a ponta: compila o app com o recurso de teste `e2e` e o servidor Ollama falso, abre o `memoteca.exe` de verdade e o controla com o Playwright. O CI roda depois do `pnpm check`. **Não roda onde há um Ollama de verdade** (porta 11434): feche-o antes. Usa pastas temporárias e nunca toca nos seus dados |
 | `pnpm format` | Aplica o Prettier |
 | `pnpm tauri build --no-bundle` | Gera o executável em `src-tauri/target/release/memoteca.exe`, sem instalador |
 
@@ -43,7 +44,7 @@ Fora do escopo por enquanto: resumo acumulado do projeto, sincronização entre 
 
 ## Status
 
-Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) e **E07** (instalação silenciosa do Ollama) e **E08** (onboarding e catálogo de modelos) e **E09** (projetos) e **E10** (conversas e chat) e **E11** (memória manual) e **E12** (sugestão de memórias) e **E13** (exportar e importar) concluídas: todo PR e todo push na `main` rodam o `pnpm check` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
+Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) e **E07** (instalação silenciosa do Ollama) e **E08** (onboarding e catálogo de modelos) e **E09** (projetos) e **E10** (conversas e chat) e **E11** (memória manual) e **E12** (sugestão de memórias) e **E13** (exportar e importar) e **E14** (robustez) concluídas: todo PR e todo push na `main` rodam o `pnpm check` e, em seguida, o `pnpm e2e` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
 
 O app abre o banco local ao iniciar, aplica as migrações e mostra uma mensagem amigável se não conseguir.
 
@@ -65,7 +66,9 @@ O botão "Sugerir memórias" da conversa faz uma chamada extra ao modelo da pró
 
 Em "Configurações", seção "Dados", dá para **exportar um backup** (um arquivo JSON com a versão do formato, com projetos, conversas, mensagens e memórias) e **importar** um backup. Importar **mescla**: adiciona só o que ainda não existe aqui, mantém como está o que já existe e não traz de volta o que você excluiu. É atômico: se falhar, nada fica importado pela metade. Um arquivo inválido, truncado ou de versão desconhecida é recusado sem alterar nada.
 
-Etapa **E14** (robustez) em revisão: se os dados não abrem (arquivo travado, protegido ou danificado), o app mostra um diálogo amigável com "Tentar de novo" (sem reiniciar) e "Abrir a pasta dos dados", e nada é apagado. O mesmo "Tentar de novo" vale quando a verificação do Ollama falha. Os detalhes técnicos dos erros nunca aparecem na tela: vão para o **log local** em `%APPDATA%\io.github.0tter-dev.memoteca\logs\memoteca.log` (até 3 arquivos de 1 MB, sem o texto das suas conversas). Uma conversa cuja última mensagem ficou sem resposta (por exemplo, o app foi fechado no meio) avisa e oferece "Gerar resposta". Testes conferem que toda mensagem de erro segue as regras do catálogo e que todo cenário do plano de robustez tem teste. O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
+Robustez (E14): se os dados não abrem (arquivo travado, protegido ou danificado), o app mostra um diálogo amigável com "Tentar de novo" (sem reiniciar) e "Abrir a pasta dos dados", e nada é apagado. O mesmo "Tentar de novo" vale quando a verificação do Ollama falha. Os detalhes técnicos dos erros nunca aparecem na tela: vão para o **log local** em `%APPDATA%\io.github.0tter-dev.memoteca\logs\memoteca.log` (até 3 arquivos de 1 MB, sem o texto das suas conversas). Uma conversa cuja última mensagem ficou sem resposta (por exemplo, o app foi fechado no meio) avisa e oferece "Gerar resposta". Testes conferem que toda mensagem de erro segue as regras do catálogo e que todo cenário do plano de robustez tem teste.
+
+Etapa **E15** (testes ponta a ponta do MVP) em revisão: 17 testes funcionais rodam o `memoteca.exe` de verdade, com a janela controlada pelo Playwright, contra um servidor Ollama falso, e cobrem os 8 critérios de "MVP pronto" (onboarding com instalação e download simulados, projeto e memórias, conversa com streaming, sugestões, memórias no contexto, exportar e importar, fechar e reabrir o app com outro processo, e falhas previsíveis com recuperação), além da segunda instância do app. O que não dá para automatizar (instalação e download reais, janelas nativas, Windows limpo) está num checklist manual no [`PLANO.md`](PLANO.md#checklist-manual-e15). O quadro de etapas e o status de cada uma estão em [`PLANO.md`](PLANO.md).
 
 ## Stack
 
@@ -73,9 +76,9 @@ Etapa **E14** (robustez) em revisão: se os dados não abrem (arquivo travado, p
 - **Frontend:** React + TypeScript, com Vite, pnpm, Vitest, ESLint e Prettier.
 - **Interface:** Tailwind CSS 4, Radix UI e Zustand (em uso desde a E09). `react-markdown` com `remark-gfm` e `rehype-highlight` para as respostas (links e imagens aparecem só como texto).
 - **Arquivos:** janela padrão do Windows para escolher o arquivo do backup, com o plugin oficial `tauri-plugin-dialog` (só o crate Rust, aberto pelo backend).
-- **Persistência:** SQLite local, via `rusqlite` (SQLite embutido), com migrações próprias e IDs UUIDv7. O banco fica em `%APPDATA%io.github.0tter-dev.memotecamemoteca.db`, com cópias de segurança em `backups` quando uma migração é aplicada.
+- **Persistência:** SQLite local, via `rusqlite` (SQLite embutido), com migrações próprias e IDs UUIDv7. O banco fica em `%APPDATA%\io.github.0tter-dev.memoteca\memoteca.db`, com cópias de segurança em `backups` quando uma migração é aplicada.
 - **Inferência:** Ollama 0.30 ou mais recente, via API HTTP local (`127.0.0.1:11434`), com cliente em Rust (`reqwest`, `tokio`).
-- **Testes ponta a ponta (decidido, entram na E15):** Playwright conectado ao WebView2.
+- **Testes ponta a ponta (E15):** Playwright (`@playwright/test`, só de desenvolvimento e sem baixar navegador) conectado ao WebView2 por CDP, sobre o app compilado com o recurso de teste `e2e` (que nunca entra no build de release) e um servidor Ollama falso.
 - **CI:** GitHub Actions (runner Windows, permissões mínimas, actions fixadas por commit).
 - **Idioma:** pt-BR.
 

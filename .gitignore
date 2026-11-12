@@ -5,6 +5,7 @@ npm-debug.log*
 pnpm-debug.log*
 
 # Dependências e artefatos de build
+e2e/resultados
 node_modules
 dist
 dist-ssr

@@ -1,6 +1,8 @@
 pub mod banco;
 pub mod catalogo;
 pub mod conversas;
+#[cfg(feature = "e2e")]
+pub mod e2e;
 pub mod instalador;
 pub mod intercambio;
 pub mod log;
@@ -29,6 +31,7 @@ use ollama::{ClienteOllama, PedacoChat};
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{Manager, RunEvent};
+#[cfg(not(feature = "e2e"))]
 use tauri_plugin_dialog::DialogExt;
 use tokio_util::sync::CancellationToken;
 
@@ -95,7 +98,7 @@ fn tentar_abrir_banco(
 #[tauri::command]
 fn abrir_pasta_de_dados(app: tauri::AppHandle) -> Result<(), String> {
     let mensagem = "Não foi possível abrir a pasta dos dados. Abra o Explorador de Arquivos e procure a pasta do Memoteca dentro de AppData.";
-    let pasta = app.path().app_data_dir().map_err(|erro| {
+    let pasta = pasta_de_dados(&app).map_err(|erro| {
         crate::registrar!("não foi possível localizar a pasta de dados: {erro}");
         mensagem.to_owned()
     })?;
@@ -664,6 +667,19 @@ struct ImportacaoPendente(Mutex<Option<Backup>>);
 
 /// Abre a janela do Windows para escolher onde salvar (`Some(nome)`) ou qual arquivo abrir
 /// (`None`). `None` no resultado significa que o usuário fechou a janela sem escolher.
+///
+/// No build de testes ponta a ponta (`e2e`) não há janela: o teste escolhe pela pasta de
+/// escolhas.
+#[cfg(feature = "e2e")]
+async fn escolher_arquivo(
+    _app: &tauri::AppHandle,
+    _janela: &tauri::WebviewWindow,
+    salvar_como: Option<String>,
+) -> Option<std::path::PathBuf> {
+    e2e::escolher_arquivo(salvar_como)
+}
+
+#[cfg(not(feature = "e2e"))]
 async fn escolher_arquivo(
     app: &tauri::AppHandle,
     janela: &tauri::WebviewWindow,
@@ -989,10 +1005,20 @@ fn cancelar_download_modelo(estado: tauri::State<'_, ModelosDoApp>) {
     }
 }
 
+/// Pasta de dados do app (banco, cópias de segurança e log). No build de testes ponta a ponta
+/// (`e2e`), o teste escolhe a pasta, para nunca tocar nos dados do usuário.
+fn pasta_de_dados(app: &tauri::AppHandle) -> tauri::Result<std::path::PathBuf> {
+    #[cfg(feature = "e2e")]
+    if let Some(pasta) = e2e::pasta_de_dados() {
+        return Ok(pasta);
+    }
+    app.path().app_data_dir()
+}
+
 /// Abre o banco na pasta de dados do app. O texto técnico do erro vai para o log de erro
 /// padrão, e só a mensagem amigável sobe para a interface.
 fn abrir_banco(app: &tauri::AppHandle) -> Result<Mutex<Banco>, String> {
-    let pasta = app.path().app_data_dir().map_err(|erro| {
+    let pasta = pasta_de_dados(app).map_err(|erro| {
         crate::registrar!("não foi possível localizar a pasta de dados: {erro}");
         banco::ErroBanco::Indisponivel(erro.to_string()).mensagem_amigavel()
     })?;
@@ -1023,7 +1049,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            if let Ok(pasta) = app.path().app_data_dir() {
+            if let Ok(pasta) = pasta_de_dados(app.handle()) {
                 log::iniciar(&log::pasta_do_log(&pasta));
             }
             let estado = EstadoBanco::novo(abrir_banco(app.handle()));
@@ -1038,7 +1064,11 @@ pub fn run() {
                 });
             app.manage(OllamaDoApp(ollama));
 
-            let instalador = InstaladorDoOllama::novo(Arc::new(DetectorReal)).map_err(|erro| {
+            #[cfg(feature = "e2e")]
+            let instalador = e2e::instalador(Arc::new(DetectorReal));
+            #[cfg(not(feature = "e2e"))]
+            let instalador = InstaladorDoOllama::novo(Arc::new(DetectorReal));
+            let instalador = instalador.map_err(|erro| {
                 crate::registrar!("não foi possível preparar o instalador do Ollama: {erro}");
                 erro.mensagem_amigavel()
             });
@@ -1047,6 +1077,11 @@ pub fn run() {
                 em_andamento: Mutex::new(None),
             });
 
+            #[cfg(feature = "e2e")]
+            let disco: Arc<dyn instalador::disco::EspacoEmDisco> = Arc::new(e2e::EspacoDoE2e);
+            #[cfg(not(feature = "e2e"))]
+            let disco: Arc<dyn instalador::disco::EspacoEmDisco> =
+                Arc::new(instalador::disco::EspacoReal);
             let servico = ClienteOllama::novo()
                 .map_err(|erro| erro.mensagem_amigavel())
                 .and_then(|cliente| {
@@ -1056,7 +1091,7 @@ pub fn run() {
                     })?;
                     Ok(ServicoDeModelos::novo(
                         cliente,
-                        Arc::new(instalador::disco::EspacoReal),
+                        disco,
                         modelos::espaco::pasta_de_modelos_do_ambiente(),
                         catalogo,
                     ))
@@ -1069,6 +1104,8 @@ pub fn run() {
                 servico,
                 em_andamento: Mutex::new(None),
             });
+            #[cfg(feature = "e2e")]
+            e2e::criar_janela(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

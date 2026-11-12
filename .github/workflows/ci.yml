@@ -1,6 +1,9 @@
 name: CI
 
-# Roda as mesmas verificações do comando local `pnpm check`, sem etapas que só existam aqui.
+# Roda as mesmas verificações do comando local `pnpm check` e, depois, os testes ponta a ponta
+# (`pnpm e2e`), que usam o app de verdade e um Ollama falso. O E2E não faz parte do `pnpm check`
+# porque se recusa a rodar onde há um Ollama de verdade (a porta 11434), como a máquina do
+# desenvolvedor; aqui, no runner, não há.
 # Usa `pull_request` (e não `pull_request_target`): PRs vindos de forks rodam sem segredos
 # e com token somente leitura.
 on:
@@ -51,3 +54,6 @@ jobs:
 
       - name: Rodar todas as verificações
         run: pnpm check
+
+      - name: Rodar os testes ponta a ponta (app de verdade e Ollama falso)
+        run: pnpm e2e
