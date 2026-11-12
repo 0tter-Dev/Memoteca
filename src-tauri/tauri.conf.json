@@ -26,13 +26,30 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "publisher": "Memoteca contributors",
+    "copyright": "Copyright (c) 2026 Memoteca contributors",
+    "category": "Productivity",
+    "shortDescription": "Memoteca",
+    "longDescription": "Aplicativo para organizar conversas e a memória de modelos de linguagem locais. Projeto independente, sem relação com o Ollama.",
+    "licenseFile": "instalador/licenca.txt",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["PortugueseBR"],
+        "displayLanguageSelector": false,
+        "customLanguageFiles": {
+          "PortugueseBR": "instalador/PortugueseBR.nsh"
+        },
+        "installerIcon": "icons/icon.ico"
+      }
+    }
   }
 }
