@@ -31,7 +31,7 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E14 | Robustez transversal: erros amigáveis e recuperação | E07, E08, E10, E13 | concluída |
 | E15 | Testes funcionais ponta a ponta do MVP | E14 | concluída |
 | E16 | Empacotamento e release | E15 | concluída |
-| E17 | Primeira release (`v0.1.0`) | E16 | pendente |
+| E17 | Primeira release (`v0.1.0`) | E16 | em revisão |
 
 Valores de **Status**: `pendente`, `em andamento` (só após comando do usuário), `em revisão` (PR aberto) e `concluída` (PR mergeado).
 
@@ -719,6 +719,57 @@ Para executar **uma vez**, em Windows limpo (VM, sem o Memoteca instalado), com 
 
 **Decisões a tomar:** nenhuma pendente. A assinatura ficou para antes da `1.0.0`, e a escolha do caminho está no Registro de decisões.
 
+**Como ficou (E17):**
+
+A E17 tem uma parte que só o mantenedor pode fazer (criar a tag, testar em Windows limpo e publicar). Este PR entrega o que o agente pode: a conferência automática da release, os testes dos textos e o roteiro abaixo. **O agente não cria tag nem publica release.** A etapa só fecha depois do roteiro, num PR de fechamento que registra os resultados.
+
+- **`scripts/conferir-release.mjs <tag>`:** confere, com o `gh`, uma release já criada (rascunho serve) sem alterá-la. Baixa o instalador e confere que a release tem **um só instalador, `Memoteca_<versão>_x64-setup.exe`**, que o **SHA-256 das notas é o do arquivo baixado**, que as notas **avisam que o instalador ainda não tem assinatura** e que nenhum texto **afirma** que ele é assinado. Termina com código 1 e mensagem em português se algo falhar. As regras têm testes em `scripts/conferir-release.test.ts`, sem rede.
+- **Texto sobre assinatura:** os mesmos testes leem o `README.md`, as notas da release, a tela "Sobre", o aviso de independência, a página de licença do instalador, a config do Tauri e o workflow de release e exigem que **nenhum afirme que o instalador é assinado**, e que o README e as notas **avisem que não é**. Frases que negam ("ainda não tem assinatura") não contam como afirmação.
+- **Não foi possível conferir:** as permissões padrão do Actions do repositório (a API recusou a consulta). O job `publicar` já pede `contents: write` sozinho; se a execução real falhar com "Resource not accessible by integration", o caminho é o ajuste de "Workflow permissions" nas configurações do repositório, que é do mantenedor.
+
+#### Roteiro da primeira release (para o mantenedor)
+
+A ordem usa o rascunho como "ensaio": o instalador testado é exatamente o que será publicado, e o rascunho só você enxerga.
+
+1. **Pré-requisito:** o PR da E17 mergeado e o CI da `main` verde. Em um terminal, na pasta do repositório:
+
+   ```bash
+   git checkout main
+   git pull
+   ```
+
+2. **Criar e enviar a tag** (a versão `0.1.0` já está nos quatro arquivos, e o workflow recusa se não estiver):
+
+   ```bash
+   git tag -a v0.1.0 -m "Memoteca 0.1.0"
+   git push origin v0.1.0
+   ```
+
+3. **Acompanhar** o workflow **Release** na aba Actions: "Validar a tag", "Gerar o instalador (Windows)" e "Criar o rascunho da release". Ao terminar, há um **rascunho** em Releases, com o instalador anexado.
+4. **Conferir a release** pelo script:
+
+   ```bash
+   node scripts/conferir-release.mjs v0.1.0
+   ```
+
+5. **Testar em Windows limpo (VM):** baixar o instalador do rascunho e executar os checklists: M10 a M14 (E16) e M01 a M08 (E15), com o app instalado por ele. O M09 se cumpre no M10. Anotar o resultado de cada item.
+6. **Tag inválida (M15):** enviar uma tag fora do formato, conferir que o workflow falha em "Validar a tag" **sem criar release**, e apagá-la:
+
+   ```bash
+   git tag v0.1
+   git push origin v0.1
+   git push origin --delete v0.1
+   git tag -d v0.1
+   ```
+
+7. **Publicar:** se tudo passou, abrir o rascunho em Releases e clicar em **Publish release** (marque como pré-lançamento se preferir, por ser `0.x`). Se algo falhou, **não publique**: apague o rascunho e a tag, corrija por PR e refaça do passo 2:
+
+   ```bash
+   gh release delete v0.1.0 --cleanup-tag --yes
+   ```
+
+8. **Fechar a etapa:** passar os resultados (data, versão do Windows, resultado por item e observações) ao agente, que os registra nos "Registro da execução" dos dois checklists e marca a E17 como concluída num PR de fechamento.
+
 ---
 
 ## Registro de decisões
@@ -781,6 +832,7 @@ Para executar **uma vez**, em Windows limpo (VM, sem o Memoteca instalado), com 
 | Identidade visual (E16) | Conceito **A, "prateleiras e um ponto"**: ícone com três prateleiras claras sobre índigo e um ponto âmbar. Fonte em `identidade/icone.svg`, ícones gerados dela. Conceito de partida, e não um logo profissional; nada do Ollama. Tagline não definida (opcional) | 2026-11-12 |
 | Release por tag (E16) | Tag `vMAJOR.MINOR.PATCH` (sem sufixo) com a versão igual à dos quatro arquivos do código; qualquer outra não gera nada. A release é criada em **rascunho** e o mantenedor a publica depois de olhar. O workflow também roda em PR que mexe no empacotamento, só gerando o instalador como artefato. Não foi criada nenhuma tag nem release neste PR | 2026-11-12 |
 | Primeira release sem assinatura (E17) | A `v0.1.0` sai **sem assinatura de código**; o SmartScreen continua alertando e o `README.md` e as notas explicam. Nova etapa **E17** no quadro, a pedido do usuário. **Caminho preferido para assinar antes da `1.0.0`: SignPath Foundation**, gratuito para projetos abertos (exige licença aprovada pela OSI, repositório público, build automatizado e autenticação em dois fatores; o certificado sai em nome da SignPath Foundation; sujeito à aprovação deles; usaria um token guardado nos segredos do GitHub e um passo de assinatura no workflow). **Azure Artifact Signing** descartado por ora (para indivíduos só EUA e Canadá, e para organizações EUA, Canadá, União Europeia e Reino Unido). **Certum** (certificado de código aberto, uns 49 a 69 euros por ano, com o nome do desenvolvedor) fica como alternativa paga, com fluxo mais manual. Assinar não elimina o alerta do SmartScreen de imediato, porque a reputação se forma com o uso. Condições conferidas em 2026-11-12 por pesquisa na web e a conferir de novo antes de pedir adesão | 2026-11-12 |
+| Conferência e roteiro da primeira release (E17) | A tag e a publicação são sempre do mantenedor. Para "ensaiar", ele cria a tag, o workflow gera o rascunho, e os checklists manuais rodam com o instalador **do rascunho** (o que será publicado). O agente entrega o script `scripts/conferir-release.mjs` (SHA-256, anexo, aviso de que não há assinatura) e o roteiro, e depois registra os resultados num PR de fechamento | 2026-11-12 |
 | Tela "Sobre" (E16) | Botão na lateral. Repositório como texto, sem link clicável (o app não abre endereços externos, decisão dos links). O aviso de independência é um texto só, usado na tela, na página de licença do instalador, no README, no PLANO e nas notas da release | 2026-11-12 |
 | Dependências do chat (E10) | `react-markdown`, `remark-gfm` e `rehype-highlight`, todas já decididas na E03. O realce de código usa cores próprias (CSS), sem importar tema do `highlight.js`. Avisado no PR da E10 | 2026-11-09 |
 | Regras de validação do projeto | Nome obrigatório, com até 100 caracteres (contados como caracteres, e não bytes); instruções opcionais, com até 20.000 caracteres; nomes de projeto repetidos são permitidos; lista em ordem alfabética sem diferenciar maiúsculas. Os limites são defesa contra textos absurdos e podem mudar | 2026-11-09 |
