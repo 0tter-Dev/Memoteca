@@ -36,6 +36,7 @@ Comandos úteis:
 | `pnpm test` | Testes do frontend (Vitest) |
 | `pnpm rust:test` | Testes do backend (`cargo test`) |
 | `pnpm e2e` | Testes ponta a ponta: compila o app com o recurso de teste `e2e` e o servidor Ollama falso, abre o `memoteca.exe` de verdade e o controla com o Playwright. O CI roda depois do `pnpm check`. **Não roda onde há um Ollama de verdade** (porta 11434): feche-o antes. Usa pastas temporárias e nunca toca nos seus dados |
+| `node scripts/conferir-release.mjs v0.1.0` | Confere uma release já criada no GitHub (rascunho serve), sem alterá-la: o instalador anexado, o SHA-256 das notas e o aviso de que o instalador ainda não tem assinatura. Precisa do `gh` autenticado. O roteiro da primeira release está no [`PLANO.md`](PLANO.md#roteiro-da-primeira-release-para-o-mantenedor) |
 | `pnpm format` | Aplica o Prettier |
 | `pnpm tauri build --no-bundle` | Gera o executável em `src-tauri/target/release/memoteca.exe`, sem instalador |
 | `pnpm tauri build` | Gera o instalador NSIS em `src-tauri/target/release/bundle/nsis/` (compilação de release, leva alguns minutos). Depois, `node scripts/verificar-pacote.mjs <instalador.exe> src-tauri/target/release/memoteca.exe` confere o nome e os metadados |
@@ -56,7 +57,7 @@ Fora do escopo por enquanto: resumo acumulado do projeto, sincronização entre 
 
 ## Status
 
-Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) e **E07** (instalação silenciosa do Ollama) e **E08** (onboarding e catálogo de modelos) e **E09** (projetos) e **E10** (conversas e chat) e **E11** (memória manual) e **E12** (sugestão de memórias) e **E13** (exportar e importar) e **E14** (robustez) e **E15** (testes ponta a ponta) e **E16** (empacotamento e release) concluídas (a **E17**, primeira release, está planejada): todo PR e todo push na `main` rodam o `pnpm check` e, em seguida, o `pnpm e2e` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
+Etapas **E01** (scaffold do app e ferramentas de qualidade), **E02** (verificações automáticas no GitHub), **E03** (contrato com a API do Ollama, telas e fluxos) e **E04** (persistência SQLite) e **E05** (cliente da API do Ollama) e **E06** (ciclo de vida do Ollama) e **E07** (instalação silenciosa do Ollama) e **E08** (onboarding e catálogo de modelos) e **E09** (projetos) e **E10** (conversas e chat) e **E11** (memória manual) e **E12** (sugestão de memórias) e **E13** (exportar e importar) e **E14** (robustez) e **E15** (testes ponta a ponta) e **E16** (empacotamento e release) concluídas (a **E17**, primeira release, está em revisão: o que o agente entrega é a conferência da release e o roteiro; a tag e a publicação são do mantenedor): todo PR e todo push na `main` rodam o `pnpm check` e, em seguida, o `pnpm e2e` num runner Windows (workflow em [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Antes de abrir um PR, rode `pnpm check` localmente: ele precisa terminar sem erros.
 
 O app abre o banco local ao iniciar, aplica as migrações e mostra uma mensagem amigável se não conseguir.
 
