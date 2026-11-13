@@ -422,6 +422,29 @@ async fn preparar_de_novo_nao_inicia_um_segundo_processo() {
     assert_eq!(registro.iniciadas.lock().unwrap().len(), 1);
 }
 
+// ----- Apoio dos testes -----
+
+/// Os testes rodam em paralelo e cada um pede a sua porta. Duas portas iguais faziam um teste
+/// enxergar o servidor do outro (falha intermitente no CI), então a mesma porta nunca pode ser
+/// entregue duas vezes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn portas_livres_pedidas_ao_mesmo_tempo_nunca_se_repetem() {
+    let pedidos: Vec<_> = (0..300)
+        .map(|_| tokio::spawn(async { porta_livre().await }))
+        .collect();
+
+    let mut portas = std::collections::HashSet::new();
+    for pedido in pedidos {
+        let endereco = pedido.await.unwrap();
+        assert!(
+            portas.insert(endereco.port()),
+            "a porta {} foi entregue duas vezes",
+            endereco.port()
+        );
+    }
+    assert_eq!(portas.len(), 300);
+}
+
 // ----- Ollama que demora a responder depois de abrir a porta -----
 
 #[tokio::test]
