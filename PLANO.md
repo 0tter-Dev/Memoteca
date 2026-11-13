@@ -30,7 +30,7 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E13 | Exportar e importar | E04, E11 | concluída |
 | E14 | Robustez transversal: erros amigáveis e recuperação | E07, E08, E10, E13 | concluída |
 | E15 | Testes funcionais ponta a ponta do MVP | E14 | concluída |
-| E16 | Empacotamento e release | E15 | em revisão |
+| E16 | Empacotamento e release | E15 | concluída |
 
 Valores de **Status**: `pendente`, `em andamento` (só após comando do usuário), `em revisão` (PR aberto) e `concluída` (PR mergeado).
 
