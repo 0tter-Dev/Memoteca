@@ -30,7 +30,8 @@ Este arquivo é a **fonte de verdade de escopo, regras de negócio e ordem de tr
 | E13 | Exportar e importar | E04, E11 | concluída |
 | E14 | Robustez transversal: erros amigáveis e recuperação | E07, E08, E10, E13 | concluída |
 | E15 | Testes funcionais ponta a ponta do MVP | E14 | concluída |
-| E16 | Empacotamento e release | E15 | em revisão |
+| E16 | Empacotamento e release | E15 | concluída |
+| E17 | Primeira release (`v0.1.0`) | E16 | pendente |
 
 Valores de **Status**: `pendente`, `em andamento` (só após comando do usuário), `em revisão` (PR aberto) e `concluída` (PR mergeado).
 
@@ -696,6 +697,28 @@ Para executar **uma vez**, em Windows limpo (VM, sem o Memoteca instalado), com 
 
 **Registro da execução** (preencher no PR): data, versão do Windows, ID do item, resultado (passou, falhou ou não se aplica) e observações. _Ainda não executado._
 
+### E17 — Primeira release (`v0.1.0`)
+
+**Depende de:** E16.
+
+**Entrega:**
+
+- A primeira release do Memoteca, `v0.1.0`, gerada pelo workflow da E16 a partir de uma tag criada pelo mantenedor e **sem assinatura de código** (decisão registrada abaixo).
+- Os checklists manuais da E15 (M01 a M09) e da E16 (M10 a M15) executados em Windows limpo, com o resultado registrado no `PLANO.md`.
+- Textos da release e do `README.md` conferidos contra a release real (como instalar, alerta do SmartScreen, SHA-256).
+- O caminho para assinar o código antes da `1.0.0` documentado, sem implementá-lo nesta etapa.
+
+**Critérios de aceite:**
+
+- A tag `v0.1.0`, no commit da `main` escolhido pelo mantenedor, faz o workflow gerar o instalador e um **rascunho** de release com o instalador, as notas e o SHA-256, e o SHA-256 bate com o do arquivo baixado.
+- Uma tag com formato inválido (por exemplo `v0.1`) falha em "Validar a tag" e **não cria release**. **(falha)**
+- O instalador baixado da release instala em Windows limpo e abre sem terminal, seguindo só o `README.md`, inclusive o passo do alerta do SmartScreen.
+- O resultado de cada item dos checklists M01 a M15 está registrado no `PLANO.md` (passou, falhou ou não se aplica). Um item que falhar vira correção antes de a release ser publicada. **(falha)**
+- Nenhum texto da release, do `README.md` ou do app afirma que o instalador é assinado. **(falha)**
+- A release só é publicada pelo mantenedor, que cria a tag e publica o rascunho. O agente não cria tag nem publica release.
+
+**Decisões a tomar:** nenhuma pendente. A assinatura ficou para antes da `1.0.0`, e a escolha do caminho está no Registro de decisões.
+
 ---
 
 ## Registro de decisões
@@ -757,6 +780,7 @@ Para executar **uma vez**, em Windows limpo (VM, sem o Memoteca instalado), com 
 | Dados na desinstalação (E16) | **Mantidos por padrão**, com uma caixa desmarcada no desinstalador para apagar também os dados do app (`%APPDATA%` e `%LOCALAPPDATA%` do identificador do app). O Ollama e os modelos nunca são tocados | 2026-11-12 |
 | Identidade visual (E16) | Conceito **A, "prateleiras e um ponto"**: ícone com três prateleiras claras sobre índigo e um ponto âmbar. Fonte em `identidade/icone.svg`, ícones gerados dela. Conceito de partida, e não um logo profissional; nada do Ollama. Tagline não definida (opcional) | 2026-11-12 |
 | Release por tag (E16) | Tag `vMAJOR.MINOR.PATCH` (sem sufixo) com a versão igual à dos quatro arquivos do código; qualquer outra não gera nada. A release é criada em **rascunho** e o mantenedor a publica depois de olhar. O workflow também roda em PR que mexe no empacotamento, só gerando o instalador como artefato. Não foi criada nenhuma tag nem release neste PR | 2026-11-12 |
+| Primeira release sem assinatura (E17) | A `v0.1.0` sai **sem assinatura de código**; o SmartScreen continua alertando e o `README.md` e as notas explicam. Nova etapa **E17** no quadro, a pedido do usuário. **Caminho preferido para assinar antes da `1.0.0`: SignPath Foundation**, gratuito para projetos abertos (exige licença aprovada pela OSI, repositório público, build automatizado e autenticação em dois fatores; o certificado sai em nome da SignPath Foundation; sujeito à aprovação deles; usaria um token guardado nos segredos do GitHub e um passo de assinatura no workflow). **Azure Artifact Signing** descartado por ora (para indivíduos só EUA e Canadá, e para organizações EUA, Canadá, União Europeia e Reino Unido). **Certum** (certificado de código aberto, uns 49 a 69 euros por ano, com o nome do desenvolvedor) fica como alternativa paga, com fluxo mais manual. Assinar não elimina o alerta do SmartScreen de imediato, porque a reputação se forma com o uso. Condições conferidas em 2026-11-12 por pesquisa na web e a conferir de novo antes de pedir adesão | 2026-11-12 |
 | Tela "Sobre" (E16) | Botão na lateral. Repositório como texto, sem link clicável (o app não abre endereços externos, decisão dos links). O aviso de independência é um texto só, usado na tela, na página de licença do instalador, no README, no PLANO e nas notas da release | 2026-11-12 |
 | Dependências do chat (E10) | `react-markdown`, `remark-gfm` e `rehype-highlight`, todas já decididas na E03. O realce de código usa cores próprias (CSS), sem importar tema do `highlight.js`. Avisado no PR da E10 | 2026-11-09 |
 | Regras de validação do projeto | Nome obrigatório, com até 100 caracteres (contados como caracteres, e não bytes); instruções opcionais, com até 20.000 caracteres; nomes de projeto repetidos são permitidos; lista em ordem alfabética sem diferenciar maiúsculas. Os limites são defesa contra textos absurdos e podem mudar | 2026-11-09 |
@@ -779,7 +803,7 @@ Para executar **uma vez**, em Windows limpo (VM, sem o Memoteca instalado), com 
 | Decisão | Etapa que a resolve |
 | --- | --- |
 | Confirmar a versão mínima do Ollama (0.30.0) contra um Ollama real dessa versão. Na E06 só havia a 0.32.9 para testar | E15 (checklist manual) |
-| Assinatura de código dos instaladores | Antes da `1.0.0` |
+| Assinatura de código dos instaladores: pedir adesão à SignPath Foundation e ligar o passo de assinatura no workflow (o mantenedor faz o pedido; ver a decisão da E17) | Antes da `1.0.0` |
 | Refinar a identidade visual (logo profissional, tagline). O conceito A está em uso | Opcional, quando o usuário quiser |
 | Consulta formal de registro de marca (INPI, USPTO, EUIPO) e do domínio, antes de divulgar amplamente. A triagem feita não substitui essa consulta | Mantenedor, antes de divulgar |
 
