@@ -8,10 +8,10 @@
 //! que o E2E da E15 também vai usar. Nada daqui entra no app.
 #![allow(dead_code)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -187,12 +187,29 @@ pub async fn endereco_sem_ninguem() -> String {
     format!("http://{}", porta_livre().await)
 }
 
-/// Endereço `ip:porta` de uma porta local que acabou de ser liberada.
+/// Portas que `porta_livre` já entregou neste processo de teste.
+static PORTAS_ENTREGUES: OnceLock<Mutex<HashSet<u16>>> = OnceLock::new();
+
+/// Endereço `ip:porta` de uma porta local que acabou de ser liberada, **entregue uma única vez**
+/// neste processo de teste.
+///
+/// A porta é solta antes de ser devolvida (o servidor só abre depois), e o sistema pode entregar a
+/// mesma porta solta a duas chamadas seguidas. Com os testes rodando em paralelo, dois deles
+/// recebiam a mesma porta e um via o servidor do outro respondendo (no CI isso derrubou
+/// `a_porta_aberta_antes_de_o_ollama_responder…` e `descartar_o_gerenciador…`). O registro abaixo
+/// impede a repetição: uma porta já entregue é descartada e o sorteio recomeça.
 pub async fn porta_livre() -> SocketAddr {
-    let ouvinte = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let endereco = ouvinte.local_addr().unwrap();
-    drop(ouvinte);
-    endereco
+    let entregues = PORTAS_ENTREGUES.get_or_init(Mutex::default);
+    // Os sorteios repetidos ficam abertos até o fim, para o sistema não devolver a mesma porta.
+    let mut repetidos = Vec::new();
+    loop {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endereco = ouvinte.local_addr().unwrap();
+        if entregues.lock().unwrap().insert(endereco.port()) {
+            return endereco;
+        }
+        repetidos.push(ouvinte);
+    }
 }
 
 // ----- Atendimento -----
